@@ -90,6 +90,7 @@ public sealed class RagasRunResultViewModel
     public decimal AvgOverallScore { get; set; }
     public DateTime RunDate { get; set; }
     public List<RagasModelSummaryItem> ModelSummaries { get; set; } = new();
+    public List<RagasTokenUsageSummaryItem> WeeklyTokenUsage { get; set; } = new();
     public List<RagasResultDetailItem> Results { get; set; } = new();
 }
 
@@ -105,6 +106,21 @@ public sealed class RagasModelSummaryItem
     public decimal AvgContextPrecision { get; set; }
     public decimal AvgContextRecall { get; set; }
     public decimal AvgOverallScore { get; set; }
+}
+
+public sealed class RagasTokenUsageSummaryItem
+{
+    public string EmbeddingModel { get; set; } = string.Empty;
+    public string? LlmModel { get; set; }
+    public int RunCount { get; set; }
+    public int QuestionCount { get; set; }
+    public int EstimatedEmbeddingTokens { get; set; }
+    public int EstimatedPromptTokens { get; set; }
+    public int EstimatedCompletionTokens { get; set; }
+    public int EstimatedTotalTokens { get; set; }
+    public decimal AvgOverallScore { get; set; }
+    public DateTime FromUtc { get; set; }
+    public DateTime ToUtc { get; set; }
 }
 
 public sealed class RagasResultDetailItem

@@ -21,16 +21,21 @@ public sealed class IndexModel : AppPageModel
         var summaries = await _evaluationService.GetSubjectSummariesAsync(cancellationToken);
         ViewModel = new RagasSubjectListViewModel
         {
-            Subjects = summaries.Select(summary => new RagasSubjectItem
-            {
-                SubjectId = summary.SubjectId,
-                SubjectCode = summary.SubjectCode,
-                SubjectName = summary.SubjectName,
-                QuestionCount = summary.QuestionCount,
-                BenchmarkRunCount = summary.BenchmarkRunCount,
-                LastOverallScore = summary.LastOverallScore,
-                LastRunDate = summary.LastRunDate
-            }).ToList()
+            Subjects = summaries
+                .OrderByDescending(summary => summary.BenchmarkRunCount > 0)
+                .ThenByDescending(summary => summary.LastRunDate)
+                .ThenBy(summary => summary.SubjectCode)
+                .Select(summary => new RagasSubjectItem
+                {
+                    SubjectId = summary.SubjectId,
+                    SubjectCode = summary.SubjectCode,
+                    SubjectName = summary.SubjectName,
+                    QuestionCount = summary.QuestionCount,
+                    BenchmarkRunCount = summary.BenchmarkRunCount,
+                    LastOverallScore = summary.LastOverallScore,
+                    LastRunDate = summary.LastRunDate
+                })
+                .ToList()
         };
     }
 }
