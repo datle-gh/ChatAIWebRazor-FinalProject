@@ -25,8 +25,8 @@
                             <th class="border-0 px-4 py-3">Mã môn</th>
                             <th class="border-0 py-3">Tên môn học</th>
                             <th class="border-0 py-3 text-center">Số câu hỏi mẫu</th>
-                            <th class="border-0 py-3 text-center">Số lượt chạy</th>
-                            <th class="border-0 py-3 text-center">Điểm đánh giá gần nhất</th>
+                            <th class="border-0 py-3 text-center">Số lần benchmark</th>
+                            <th class="border-0 py-3 text-center">Điểm tổng hợp gần nhất</th>
                             <th class="border-0 py-3">Thời gian chạy</th>
                             <th class="border-0 py-3 text-end px-4">Thao tác</th>
                         </tr>
@@ -61,15 +61,17 @@
                                         @(subject.LastRunDate?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "-")
                                     </td>
                                     <td class="py-3 text-end px-4">
-                                        <a asp-page="/RagasEvaluation/Questions" asp-route-subjectId="@subject.SubjectId" class="btn btn-sm btn-outline-primary rounded-pill px-3">
-                                            Quản lý câu hỏi
-                                        </a>
+                                        <div class="d-inline-flex flex-column gap-2" style="min-width: 150px;">
                                         @if (subject.BenchmarkRunCount > 0)
                                         {
-                                            <a asp-page="/RagasEvaluation/Details" asp-route-subjectId="@subject.SubjectId" class="btn btn-sm btn-light text-primary rounded-pill ms-1">
+                                            <a asp-page="/RagasEvaluation/Details" asp-route-subjectId="@subject.SubjectId" class="btn btn-sm btn-primary rounded-pill px-3 w-100">
                                                 Xem kết quả
                                             </a>
                                         }
+                                        <a asp-page="/RagasEvaluation/Questions" asp-route-subjectId="@subject.SubjectId" class="btn btn-sm btn-outline-primary rounded-pill px-3 w-100">
+                                            Quản lý câu hỏi
+                                        </a>
+                                        </div>
                                     </td>
                                 </tr>
                             }
