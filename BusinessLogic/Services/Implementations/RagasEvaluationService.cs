@@ -439,11 +439,11 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
         try
         {
             var llmResponse = await _llmService.GenerateAnswerAsync(prompt, cancellationToken);
-            var jsonStartIndex = llmResponse.IndexOf('{');
-            var jsonEndIndex = llmResponse.LastIndexOf('}');
+            var jsonStartIndex = llmResponse.Text.IndexOf('{');
+            var jsonEndIndex = llmResponse.Text.LastIndexOf('}');
             if (jsonStartIndex >= 0 && jsonEndIndex >= jsonStartIndex)
             {
-                var json = llmResponse.Substring(jsonStartIndex, jsonEndIndex - jsonStartIndex + 1);
+                var json = llmResponse.Text.Substring(jsonStartIndex, jsonEndIndex - jsonStartIndex + 1);
                 var score = JsonSerializer.Deserialize<LlmScore>(json);
                 if (score is not null)
                 {
@@ -470,9 +470,10 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
     {
         try
         {
-            return await _llmService.GenerateAnswerAsync(
+            var response = await _llmService.GenerateAnswerAsync(
                 _promptBuilder.Build(question, contextChunks),
                 cancellationToken);
+            return response.Text;
         }
         catch (Exception exception)
         {

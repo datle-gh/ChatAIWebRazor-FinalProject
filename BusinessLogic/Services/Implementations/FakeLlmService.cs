@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using BusinessLogic.DTOs.Responses;
 using BusinessLogic.Infrastructure.Settings;
 using BusinessLogic.Services.Interfaces;
 using Microsoft.Extensions.Configuration;
@@ -22,7 +23,7 @@ public sealed class FakeLlmService : ILlmService
 
     public string ModelName => _modelName;
 
-    public async Task<string> GenerateAnswerAsync(
+    public async Task<LlmResponseDto> GenerateAnswerAsync(
         string prompt,
         CancellationToken cancellationToken = default)
     {
@@ -34,7 +35,8 @@ public sealed class FakeLlmService : ILlmService
         var snippets = ExtractContextSnippets(prompt).ToList();
         if (snippets.Count == 0)
         {
-            return "Không tìm thấy thông tin này trong tài liệu đã tải lên.";
+            var notFoundAnswer = "Không tìm thấy thông tin này trong tài liệu đã tải lên.";
+            return new LlmResponseDto(notFoundAnswer, EstimateTokens(prompt), EstimateTokens(notFoundAnswer));
         }
 
         var builder = new StringBuilder();
@@ -47,7 +49,8 @@ public sealed class FakeLlmService : ILlmService
             builder.AppendLine($"- {snippet}");
         }
 
-        return builder.ToString().Trim();
+        var answer = builder.ToString().Trim();
+        return new LlmResponseDto(answer, EstimateTokens(prompt), EstimateTokens(answer));
     }
 
     private static IEnumerable<string> ExtractContextSnippets(string prompt)
@@ -72,5 +75,15 @@ public sealed class FakeLlmService : ILlmService
     private static string NormalizeWhitespace(string value)
     {
         return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    private static int EstimateTokens(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        return Math.Max(1, (int)Math.Ceiling(value.Length / 4.0));
     }
 }

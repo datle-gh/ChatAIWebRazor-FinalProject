@@ -67,6 +67,10 @@
                     <span class="material-symbols-outlined shell-nav-icon" aria-hidden="true">history</span>
                     <span>Lịch sử hội thoại</span>
                 </a>
+                <a class="shell-nav-link @(IsActive("/TokenUsage") ? "active" : "")" asp-page="/TokenUsage/Index" title="Thống kê token của tôi">
+                    <span class="material-symbols-outlined shell-nav-icon @(IsActive("/TokenUsage") ? "icon-fill" : "")" aria-hidden="true">data_usage</span>
+                    <span>Token của tôi</span>
+                </a>
                 @if (User.IsInRole("Admin") || User.IsInRole("Teacher"))
                 {
                     <a class="shell-nav-link @(IsActive("/Subject") ? "active" : "")" asp-page="/Subject/Index">
@@ -88,6 +92,10 @@
                     <a class="shell-nav-link @(IsActive("/RagasEvaluation") ? "active" : "")" asp-page="/RagasEvaluation/Index">
                         <span class="material-symbols-outlined shell-nav-icon @(IsActive("/RagasEvaluation") ? "icon-fill" : "")" aria-hidden="true">model_training</span>
                         <span>Đánh giá mô hình</span>
+                    </a>
+                    <a class="shell-nav-link @(IsActive("/AdminTokenUsage") ? "active" : "")" asp-page="/AdminTokenUsage/Index">
+                        <span class="material-symbols-outlined shell-nav-icon @(IsActive("/AdminTokenUsage") ? "icon-fill" : "")" aria-hidden="true">query_stats</span>
+                        <span>Thống kê token</span>
                     </a>
                     <a class="shell-nav-link @(IsActive("/SystemSettings") ? "active" : "")" asp-page="/SystemSettings/Index">
                         <span class="material-symbols-outlined shell-nav-icon @(IsActive("/SystemSettings") ? "icon-fill" : "")" aria-hidden="true">settings</span>
