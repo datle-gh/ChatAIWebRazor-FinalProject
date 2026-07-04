@@ -32,8 +32,9 @@ The project follows a 3-layer architecture for the PRN222/FPT course: `Presentat
 - Benchmark chat/RAG with an evaluation question set.
 - Support for multiple embedding models:
   - `bge-m3` via Ollama.
-  - `vinai/phobert-base` via the PhoBERT FastAPI service.
-  - Fine-tuned PhoBERT model if an artifact is available.
+  - `nomic-embed-text` via Ollama.
+  - `mxbai-embed-large` via Ollama.
+  - Optional: `vinai/phobert-base` via the PhoBERT FastAPI service.
 - Support for Qdrant as a vector store, with SQL as fallback.
 - Support for a RAGAS Python service to score RAG.
 
@@ -46,7 +47,7 @@ The project follows a 3-layer architecture for the PRN222/FPT course: `Presentat
 | Database | SQL Server, Entity Framework Core |
 | Auth | Cookie Authentication |
 | LLM | Google Gemini, Fake LLM fallback |
-| Embedding | Ollama `bge-m3`, PhoBERT FastAPI, Fake embedding fallback |
+| Embedding | Ollama `bge-m3`, `nomic-embed-text`, `mxbai-embed-large`; optional PhoBERT; Fake embedding fallback |
 | Vector search | SQL cosine fallback, Qdrant REST API |
 | File parsing | PdfPig, OpenXML |
 | Benchmark | RAGAS service, LLM-as-judge fallback |
@@ -59,7 +60,7 @@ You need to install:
 - .NET SDK 8.0 or later.
 - SQL Server or SQL Server Express.
 - Visual Studio 2022 or VS Code.
-- Ollama if using the `bge-m3` embedding.
+- Ollama for the default 3-model benchmark.
 - Python 3.10+ if using PhoBERT/RAGAS/fine-tuning.
 - Qdrant if you want to use the Qdrant vector store.
 
@@ -69,6 +70,12 @@ Quick check:
 dotnet --version
 python --version
 ollama --version
+```
+
+Install Ollama on Windows if it is missing:
+
+```powershell
+irm https://ollama.com/install.ps1 | iex
 ```
 
 ## Quick Setup
@@ -193,15 +200,25 @@ cd Presentation
 dotnet user-secrets set "Llm:Gemini:ApiKey" "<your-gemini-api-key>"
 ```
 
-### Ollama bge-m3 embedding
+Do not put the real Gemini API key in `appsettings.json`. The committed config stores only the provider/model names; the secret is loaded from User Secrets on each developer machine.
 
-Pull the model:
+### Ollama embedding models for benchmark
+
+The default benchmark compares these 3 local embedding models:
+
+- `bge-m3`
+- `nomic-embed-text`
+- `mxbai-embed-large`
+
+Pull all models:
 
 ```powershell
 ollama pull bge-m3
+ollama pull nomic-embed-text
+ollama pull mxbai-embed-large
 ```
 
-Warm up the embedding model:
+Warm up Ollama:
 
 ```powershell
 Invoke-RestMethod `
@@ -211,10 +228,17 @@ Invoke-RestMethod `
   -Body '{"model":"bge-m3","input":"This is a warm-up test sentence for the embedding.","truncate":true}'
 ```
 
+Optional warm-up for the other benchmark models:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:11434/api/embed" -Method Post -ContentType "application/json" -Body '{"model":"nomic-embed-text","input":"warm up","truncate":true}'
+Invoke-RestMethod -Uri "http://localhost:11434/api/embed" -Method Post -ContentType "application/json" -Body '{"model":"mxbai-embed-large","input":"warm up","truncate":true}'
+```
+
 Check the loaded model:
 
 ```powershell
-ollama ps
+ollama list
 ```
 
 ### Embedding models
@@ -237,19 +261,37 @@ Default in `appsettings.json`:
       "IncludeInBenchmark": true
     },
     {
+      "Key": "nomic-embed-text",
+      "Provider": "Ollama",
+      "Model": "nomic-embed-text",
+      "BaseUrl": "http://localhost:11434",
+      "Dimension": 768,
+      "Enabled": true,
+      "IncludeInBenchmark": true
+    },
+    {
+      "Key": "mxbai-embed-large",
+      "Provider": "Ollama",
+      "Model": "mxbai-embed-large",
+      "BaseUrl": "http://localhost:11434",
+      "Dimension": 1024,
+      "Enabled": true,
+      "IncludeInBenchmark": true
+    },
+    {
       "Key": "phobert-base",
       "Provider": "PhoBert",
       "Model": "vinai/phobert-base",
       "BaseUrl": "http://localhost:8001",
       "Dimension": 768,
-      "Enabled": true,
+      "Enabled": false,
       "IncludeInBenchmark": true
     }
   ]
 }
 ```
 
-If you have not started the PhoBERT service yet, you can temporarily disable the PhoBERT model:
+Keep PhoBERT disabled unless the Python PhoBERT service is running:
 
 ```json
 "Enabled": false
@@ -570,6 +612,8 @@ After you have the fine-tuned model, enable it in `appsettings.json`:
 | `dotnet build ChatAIWeb.slnx` | Build the entire solution |
 | `dotnet run --project Presentation\Presentation.csproj --launch-profile https` | Run the web app |
 | `ollama pull bge-m3` | Download the embedding model |
+| `ollama pull nomic-embed-text` | Download benchmark embedding model |
+| `ollama pull mxbai-embed-large` | Download benchmark embedding model |
 | `ollama ps` | Check loaded Ollama models |
 | `python python_services\phobert_service.py` | Run the PhoBERT embedding service |
 | `python python_services\ragas_service.py` | Run the RAGAS service |
