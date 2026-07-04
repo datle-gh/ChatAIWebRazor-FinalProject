@@ -1,4 +1,5 @@
 using BusinessObject.Entities;
+using DataAccess.Repositories.Models;
 
 namespace DataAccess.Repositories.Interfaces;
 
@@ -26,4 +27,10 @@ public interface IChatRepository
     Task<int> CountSessionsAsync(CancellationToken cancellationToken = default);
 
     Task<int> CountMessagesAsync(CancellationToken cancellationToken = default);
+
+    Task<TokenUsageAggregate> GetTokenUsageAsync(CancellationToken cancellationToken = default);
+
+    Task<TokenUsageAggregate> GetTokenUsageByUserAsync(int userId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UserTokenUsageAggregate>> GetTokenUsageByUsersAsync(CancellationToken cancellationToken = default);
 }

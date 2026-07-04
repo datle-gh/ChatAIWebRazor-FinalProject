@@ -1,0 +1,110 @@
+@page "/AdminTokenUsage/Index"
+@model Presentation.Pages.AdminTokenUsage.IndexModel
+
+@{
+    ViewData["Title"] = "Thống kê token";
+}
+
+<style>
+    .role-badge {
+        display: inline-flex;
+        align-items: center;
+        min-width: 72px;
+        justify-content: center;
+        padding: 0.35rem 0.65rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #312e81;
+        font-weight: 700;
+        font-size: 0.78rem;
+        line-height: 1;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Thống kê token</h1>
+            <p class="text-muted mb-0">Tổng hợp lượng token người dùng đã sử dụng trong Gia sư AI.</p>
+        </div>
+        <a class="btn btn-outline-secondary" asp-page="/AdminDashboard/Index">
+            <span class="material-symbols-outlined align-middle me-1" style="font-size:1.1rem">insert_chart</span>
+            Dashboard
+        </a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="border rounded-3 bg-white p-4 h-100">
+                <div class="text-muted small text-uppercase fw-semibold">Tổng token</div>
+                <div class="h2 fw-bold mb-0">@Model.ViewModel.Summary.TotalTokens.ToString("N0")</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="border rounded-3 bg-white p-4 h-100">
+                <div class="text-muted small text-uppercase fw-semibold">Prompt token</div>
+                <div class="h2 fw-bold mb-0">@Model.ViewModel.Summary.PromptTokens.ToString("N0")</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="border rounded-3 bg-white p-4 h-100">
+                <div class="text-muted small text-uppercase fw-semibold">Completion token</div>
+                <div class="h2 fw-bold mb-0">@Model.ViewModel.Summary.CompletionTokens.ToString("N0")</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="border rounded-3 bg-white p-4 h-100">
+                <div class="text-muted small text-uppercase fw-semibold">Câu trả lời</div>
+                <div class="h2 fw-bold mb-0">@Model.ViewModel.Summary.AnswerCount.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="border rounded-3 bg-white overflow-hidden">
+        <div class="px-4 py-3 border-bottom">
+            <h2 class="h5 mb-0">Token theo từng user</h2>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Người dùng</th>
+                        <th>Vai trò</th>
+                        <th class="text-end">Prompt</th>
+                        <th class="text-end">Completion</th>
+                        <th class="text-end">Tổng token</th>
+                        <th class="text-end">Câu trả lời</th>
+                        <th>Lần dùng gần nhất</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.ViewModel.Users.Any())
+                    {
+                        foreach (var user in Model.ViewModel.Users)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@user.FullName</div>
+                                    <div class="text-muted small">@user.Email</div>
+                                </td>
+                                <td><span class="role-badge">@user.Role</span></td>
+                                <td class="text-end">@user.PromptTokens.ToString("N0")</td>
+                                <td class="text-end">@user.CompletionTokens.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@user.TotalTokens.ToString("N0")</td>
+                                <td class="text-end">@user.AnswerCount.ToString("N0")</td>
+                                <td>@(user.LastUsedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Chưa có dữ liệu")</td>
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">Chưa có dữ liệu token.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

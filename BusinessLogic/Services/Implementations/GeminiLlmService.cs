@@ -1,4 +1,5 @@
 using BusinessLogic.Services.Interfaces;
+using BusinessLogic.DTOs.Responses;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -33,7 +34,7 @@ public sealed class GeminiLlmService : ILlmService
 
     public string ModelName => _settings.Model;
 
-    public async Task<string> GenerateAnswerAsync(
+    public async Task<LlmResponseDto> GenerateAnswerAsync(
         string prompt,
         CancellationToken cancellationToken = default)
     {
@@ -75,7 +76,10 @@ public sealed class GeminiLlmService : ILlmService
                 throw new InvalidOperationException("Mô hình AI không trả về nội dung.");
             }
 
-            return answer.Trim();
+            return new LlmResponseDto(
+                answer.Trim(),
+                payload?.UsageMetadata?.PromptTokenCount,
+                payload?.UsageMetadata?.CandidatesTokenCount);
         }
         catch (HttpRequestException exception)
         {
@@ -146,8 +150,14 @@ public sealed class GeminiLlmService : ILlmService
         [property: JsonPropertyName("maxOutputTokens")] int MaxOutputTokens);
 
     private sealed record GeminiGenerateContentResponse(
-        [property: JsonPropertyName("candidates")] IReadOnlyList<GeminiCandidate>? Candidates);
+        [property: JsonPropertyName("candidates")] IReadOnlyList<GeminiCandidate>? Candidates,
+        [property: JsonPropertyName("usageMetadata")] GeminiUsageMetadata? UsageMetadata);
 
     private sealed record GeminiCandidate(
         [property: JsonPropertyName("content")] GeminiContent? Content);
+
+    private sealed record GeminiUsageMetadata(
+        [property: JsonPropertyName("promptTokenCount")] int? PromptTokenCount,
+        [property: JsonPropertyName("candidatesTokenCount")] int? CandidatesTokenCount,
+        [property: JsonPropertyName("totalTokenCount")] int? TotalTokenCount);
 }

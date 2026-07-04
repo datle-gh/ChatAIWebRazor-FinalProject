@@ -67,6 +67,7 @@ builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IChatbotService, ChatbotService>();
 builder.Services.AddScoped<IChatHistoryService, ChatHistoryService>();
+builder.Services.AddScoped<ITokenUsageService, TokenUsageService>();
 builder.Services.AddScoped<IChunkingService, ChunkingService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmbeddingModelRegistry, EmbeddingModelRegistry>();
