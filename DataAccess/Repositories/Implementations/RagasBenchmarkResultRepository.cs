@@ -52,6 +52,16 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
 
     public async Task<int> CountBySubjectAsync(int subjectId, CancellationToken cancellationToken = default)
     {
+        if (await HasPhase2BenchmarkColumnsAsync(cancellationToken))
+        {
+            return await _context.RagasBenchmarkResults
+                .AsNoTracking()
+                .Where(r => r.EvaluationQuestion.SubjectId == subjectId)
+                .Select(r => r.RunId)
+                .Distinct()
+                .CountAsync(cancellationToken);
+        }
+
         return await _context.RagasBenchmarkResults
             .CountAsync(r => r.EvaluationQuestion.SubjectId == subjectId, cancellationToken);
     }
@@ -145,6 +155,23 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
                 && r.RunId == latest.RunId)
             .OrderBy(r => r.EmbeddingModel)
             .ThenBy(r => r.EvaluationQuestionId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RagasBenchmarkResult>> GetBySubjectSinceAsync(
+        int subjectId,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.RagasBenchmarkResults
+            .AsNoTracking()
+            .Include(result => result.EvaluationQuestion)
+            .Where(result =>
+                result.EvaluationQuestion.SubjectId == subjectId
+                && result.CreatedAt >= sinceUtc)
+            .OrderByDescending(result => result.CreatedAt)
+            .ThenBy(result => result.EmbeddingModel)
+            .ThenBy(result => result.EvaluationQuestionId)
             .ToListAsync(cancellationToken);
     }
 

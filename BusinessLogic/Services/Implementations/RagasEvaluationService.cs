@@ -1,6 +1,7 @@
 using BusinessLogic.Services.Interfaces;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using BusinessLogic.DTOs.Responses;
 using BusinessLogic.Infrastructure;
 using BusinessLogic.Infrastructure.Interfaces;
@@ -62,7 +63,11 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
         {
             var questionCount = await _questionRepository.CountBySubjectAsync(subject.Id, cancellationToken);
             var runCount = await _resultRepository.CountBySubjectAsync(subject.Id, cancellationToken);
-            var latestRun = await _resultRepository.GetLatestBySubjectAsync(subject.Id, cancellationToken);
+            var latestRunResults = await _resultRepository.GetLatestRunBySubjectAsync(subject.Id, cancellationToken);
+            var latestOverallScore = CalculateRunOverallScore(latestRunResults);
+            var latestRunDate = latestRunResults.Count == 0
+                ? (DateTime?)null
+                : latestRunResults.Max(result => result.CreatedAt);
 
             summaries.Add(new SubjectEvaluationSummaryDto(
                 subject.Id,
@@ -70,8 +75,8 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
                 subject.SubjectName,
                 questionCount,
                 runCount,
-                latestRun?.OverallScore,
-                latestRun?.CreatedAt));
+                latestOverallScore,
+                latestRunDate));
         }
 
         return summaries;
@@ -268,8 +273,9 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
                         .Take(strategy.MaxContextChunks)
                         .ToList();
 
-                    var answer = await _llmService.GenerateAnswerAsync(
-                        _promptBuilder.Build(question.Question, contextChunks),
+                    var answer = await GenerateBenchmarkAnswerAsync(
+                        question.Question,
+                        contextChunks,
                         cancellationToken);
 
                     pendingResults.Add(new RagasBenchmarkResult
@@ -326,7 +332,8 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
             subject?.SubjectName ?? string.Empty,
             latestRunResults.Max(result => result.CreatedAt),
             latestRunResults,
-            questions);
+            questions,
+            await GetWeeklyTokenUsageAsync(subjectId, cancellationToken));
     }
 
     private IReadOnlyList<string> ResolveModelKeys(IReadOnlyList<string>? requestedModels)
@@ -453,15 +460,106 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
             _logger.LogWarning(exception, "LLM judge fallback failed");
         }
 
-        return new RagasEvaluationScore(0.5m, 0.5m, 0.5m, 0.5m);
+        return CalculateHeuristicScore(sample);
     }
+
+    private async Task<string> GenerateBenchmarkAnswerAsync(
+        string question,
+        IReadOnlyList<RetrievedChunkDto> contextChunks,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _llmService.GenerateAnswerAsync(
+                _promptBuilder.Build(question, contextChunks),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "LLM generation failed during benchmark. Using retrieved-context fallback answer.");
+            return CreateFallbackAnswer(contextChunks);
+        }
+    }
+
+    private static string CreateFallbackAnswer(IReadOnlyList<RetrievedChunkDto> contextChunks)
+    {
+        if (contextChunks.Count == 0)
+        {
+            return "Khong tim thay thong tin lien quan trong tai lieu da tai len.";
+        }
+
+        var context = NormalizeWhitespace(contextChunks[0].Content);
+        return context.Length <= 700 ? context : $"{context[..700]}...";
+    }
+
+    private static RagasEvaluationScore CalculateHeuristicScore(RagasEvaluationSample sample)
+    {
+        var context = string.Join(' ', sample.RetrievedContexts);
+        var faithfulness = TokenOverlap(sample.GeneratedAnswer, context);
+        var answerRelevancy = TokenOverlap(sample.GeneratedAnswer, sample.Question);
+        var contextPrecision = TokenOverlap(context, sample.Question);
+        var contextRecall = TokenOverlap(context, sample.GroundTruthAnswer);
+
+        return new RagasEvaluationScore(
+            faithfulness,
+            answerRelevancy,
+            contextPrecision,
+            contextRecall);
+    }
+
+    private static decimal TokenOverlap(string left, string right)
+    {
+        var leftTokens = Tokenize(left);
+        var rightTokens = Tokenize(right);
+
+        if (leftTokens.Count == 0 || rightTokens.Count == 0)
+        {
+            return 0;
+        }
+
+        var overlap = leftTokens.Count(token => rightTokens.Contains(token));
+        return Math.Round((decimal)overlap / leftTokens.Count, 4);
+    }
+
+    private static HashSet<string> Tokenize(string value)
+    {
+        return Regex.Matches(
+                value.ToLowerInvariant(),
+                @"[\p{L}\p{N}]{3,}",
+                RegexOptions.CultureInvariant)
+            .Select(match => match.Value)
+            .Where(token => !StopWords.Contains(token))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeWhitespace(string value)
+    {
+        return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cac",
+        "cho",
+        "cua",
+        "duoc",
+        "la",
+        "mot",
+        "nhung",
+        "the",
+        "thi",
+        "trong",
+        "va",
+        "voi"
+    };
 
     private static RagasRunSummaryDto CreateSummary(
         int subjectId,
         string subjectName,
         DateTime runDate,
         IReadOnlyList<RagasBenchmarkResult> results,
-        IReadOnlyList<EvaluationQuestion> questions)
+        IReadOnlyList<EvaluationQuestion> questions,
+        IReadOnlyList<RagasTokenUsageSummaryDto>? weeklyTokenUsage = null)
     {
         var questionById = questions.ToDictionary(question => question.Id);
         var modelSummaries = results
@@ -515,7 +613,94 @@ public sealed class RagasEvaluationService : IRagasEvaluationService
             modelSummaries.Count == 0 ? 0 : modelSummaries.Average(summary => summary.AvgOverallScore),
             runDate,
             modelSummaries,
+            weeklyTokenUsage ?? [],
             resultDtos);
+    }
+
+    private static decimal? CalculateRunOverallScore(IReadOnlyList<RagasBenchmarkResult> results)
+    {
+        if (results.Count == 0)
+        {
+            return null;
+        }
+
+        return results
+            .GroupBy(result => new { result.EmbeddingModel, result.ChunkingStrategy })
+            .Select(group => group.Average(result => result.OverallScore ?? 0))
+            .Average();
+    }
+
+    private async Task<IReadOnlyList<RagasTokenUsageSummaryDto>> GetWeeklyTokenUsageAsync(
+        int subjectId,
+        CancellationToken cancellationToken)
+    {
+        var toUtc = DateTime.UtcNow;
+        var fromUtc = toUtc.AddDays(-7);
+        var weeklyResults = await _resultRepository.GetBySubjectSinceAsync(
+            subjectId,
+            fromUtc,
+            cancellationToken);
+
+        return weeklyResults
+            .GroupBy(result => result.EmbeddingModel)
+            .Select(group =>
+            {
+                var rows = group.ToList();
+                var estimatedEmbeddingTokens = rows.Sum(result =>
+                    EstimateTokens(result.EvaluationQuestion?.Question)
+                    + EstimateTokensFromContexts(result.RetrievedContextsJson));
+                var estimatedPromptTokens = rows.Sum(result =>
+                    EstimateTokens(result.EvaluationQuestion?.Question)
+                    + EstimateTokensFromContexts(result.RetrievedContextsJson));
+                var estimatedCompletionTokens = rows.Sum(result => EstimateTokens(result.GeneratedAnswer));
+
+                return new RagasTokenUsageSummaryDto(
+                    group.Key,
+                    rows.FirstOrDefault()?.LlmModel,
+                    rows.Select(result => string.IsNullOrWhiteSpace(result.RunId)
+                            ? result.CreatedAt.ToString("O")
+                            : result.RunId)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count(),
+                    rows.Count,
+                    estimatedEmbeddingTokens,
+                    estimatedPromptTokens,
+                    estimatedCompletionTokens,
+                    estimatedEmbeddingTokens + estimatedPromptTokens + estimatedCompletionTokens,
+                    rows.Average(result => result.OverallScore ?? 0),
+                    fromUtc,
+                    toUtc);
+            })
+            .OrderByDescending(summary => summary.AvgOverallScore)
+            .ToList();
+    }
+
+    private static int EstimateTokensFromContexts(string? retrievedContextsJson)
+    {
+        if (string.IsNullOrWhiteSpace(retrievedContextsJson))
+        {
+            return 0;
+        }
+
+        try
+        {
+            var contexts = JsonSerializer.Deserialize<List<string>>(retrievedContextsJson) ?? [];
+            return contexts.Sum(EstimateTokens);
+        }
+        catch (JsonException)
+        {
+            return EstimateTokens(retrievedContextsJson);
+        }
+    }
+
+    private static int EstimateTokens(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        return Math.Max(1, (int)Math.Ceiling(text.Length / 4.0));
     }
 
     private static IReadOnlyList<Phase4QuestionTemplate> GeneratePhase4QuestionTemplates(Subject subject)

@@ -42,6 +42,7 @@ public sealed record RagasRunSummaryDto(
     decimal AvgOverallScore,
     DateTime RunDate,
     IReadOnlyList<RagasModelSummaryDto> ModelSummaries,
+    IReadOnlyList<RagasTokenUsageSummaryDto> WeeklyTokenUsage,
     IReadOnlyList<RagasBenchmarkResultDto> Results);
 
 public sealed record RagasModelSummaryDto(
@@ -55,6 +56,19 @@ public sealed record RagasModelSummaryDto(
     decimal AvgContextPrecision,
     decimal AvgContextRecall,
     decimal AvgOverallScore);
+
+public sealed record RagasTokenUsageSummaryDto(
+    string EmbeddingModel,
+    string? LlmModel,
+    int RunCount,
+    int QuestionCount,
+    int EstimatedEmbeddingTokens,
+    int EstimatedPromptTokens,
+    int EstimatedCompletionTokens,
+    int EstimatedTotalTokens,
+    decimal AvgOverallScore,
+    DateTime FromUtc,
+    DateTime ToUtc);
 
 public sealed record BenchmarkChunkingStrategyDto(
     string Key,

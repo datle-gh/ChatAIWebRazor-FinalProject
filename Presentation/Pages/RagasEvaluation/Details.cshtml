@@ -11,6 +11,28 @@
         if (score.Value >= 0.5m) return "text-warning";
         return "text-danger";
     }
+
+    var rankedModels = Model.ViewModel.ModelSummaries
+        .OrderByDescending(item => item.AvgOverallScore)
+        .ToList();
+    var bestModel = rankedModels.FirstOrDefault();
+    var secondModel = rankedModels.Skip(1).FirstOrDefault();
+    var lowestModel = rankedModels.LastOrDefault();
+    var scoreGap = bestModel is not null && lowestModel is not null
+        ? bestModel.AvgOverallScore - lowestModel.AvgOverallScore
+        : 0;
+
+    string GetMetricMeaning(string metric)
+    {
+        return metric switch
+        {
+            "faithfulness" => "Câu trả lời có bám sát tài liệu hay tự bịa thêm.",
+            "relevancy" => "Câu trả lời có đi đúng trọng tâm câu hỏi hay không.",
+            "precision" => "Các đoạn tài liệu được lấy lên có đúng và ít nhiễu không.",
+            "recall" => "Các đoạn tài liệu được lấy lên có đủ thông tin để trả lời không.",
+            _ => string.Empty
+        };
+    }
 }
 
 <div class="container-fluid px-4 py-4">
@@ -29,117 +51,224 @@
         </div>
     </div>
 
-    <!-- Summary Stats -->
-    <div class="row g-4 mb-4">
-        <div class="col-xl-4">
-            <div class="card bg-primary text-white h-100 shadow-sm border-0 rounded-4">
-                <div class="card-body p-4 d-flex flex-column justify-content-center align-items-center text-center">
-                    <h5 class="text-uppercase fw-semibold mb-2" style="letter-spacing: 1px; font-size: 0.9rem; opacity: 0.8;">Điểm RAGAS Tổng hợp</h5>
-                    <div class="display-3 fw-bold mb-3">@Model.ViewModel.AvgOverallScore.ToString("P1")</div>
-                    <div class="d-flex gap-3 justify-content-center mt-auto w-100 px-2" style="font-size: 0.85rem;">
-                        <div class="bg-white bg-opacity-25 rounded px-2 py-1 w-50">
-                            <div>Generator: <strong>@Model.ViewModel.LlmModel</strong></div>
+    <section class="mb-4" aria-label="Kết luận benchmark">
+        <div class="row g-3">
+            <div class="col-xl-5">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="material-symbols-outlined text-primary icon-fill">military_tech</span>
+                            <span class="text-muted small fw-semibold text-uppercase">Kết luận nhanh</span>
                         </div>
-                        <div class="bg-white bg-opacity-25 rounded px-2 py-1 w-50">
-                            <div>Retriever: <strong>@Model.ViewModel.EmbeddingModel</strong></div>
+                        <h2 class="h4 fw-bold mb-2">
+                            @if (bestModel is not null)
+                            {
+                                <span>@bestModel.EmbeddingModel đang phù hợp nhất</span>
+                            }
+                            else
+                            {
+                                <span>Chưa có model để so sánh</span>
+                            }
+                        </h2>
+                        <p class="text-muted mb-4">
+                            Benchmark đang đo khả năng retriever tìm đúng đoạn tài liệu trước khi LLM tạo câu trả lời.
+                            Điểm càng cao nghĩa là hệ thống lấy được ngữ cảnh đúng hơn.
+                        </p>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted small">Điểm tốt nhất</div>
+                                    <div class="h3 fw-bold mb-0 @GetScoreColor(bestModel?.AvgOverallScore)">
+                                        @(bestModel?.AvgOverallScore.ToString("P1") ?? "-")
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted small">Chênh lệch top-cuối</div>
+                                    <div class="h3 fw-bold mb-0">@scoreGap.ToString("P1")</div>
+                                </div>
+                            </div>
                         </div>
+                        @if (secondModel is not null && bestModel is not null)
+                        {
+                            <div class="alert alert-light border mt-3 mb-0">
+                                @bestModel.EmbeddingModel nhỉnh hơn @secondModel.EmbeddingModel khoảng
+                                <strong>@((bestModel.AvgOverallScore - secondModel.AvgOverallScore).ToString("P1"))</strong>.
+                                Với bộ dữ liệu nhỏ, nên xem đây là tín hiệu ban đầu, chưa phải kết luận tuyệt đối.
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="col-xl-8">
-            <div class="card shadow-sm border-0 h-100 rounded-4">
-                <div class="card-body p-4">
-                    <h5 class="fw-semibold mb-4 text-gray-800">Điểm thành phần trung bình (@Model.ViewModel.QuestionCount câu hỏi)</h5>
-                    <div class="row g-4">
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="fw-medium text-gray-700">Faithfulness (Mức độ trung thực)</span>
-                                <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgFaithfulness)">@Model.ViewModel.AvgFaithfulness.ToString("P1")</span>
-                            </div>
-                            <div class="progress mb-3" style="height: 10px;">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: @(Model.ViewModel.AvgFaithfulness * 100)%" aria-valuenow="@(Model.ViewModel.AvgFaithfulness * 100)" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            <small class="text-muted">Câu trả lời có được suy ra hoàn toàn từ ngữ cảnh không? Hay LLM bị ảo giác (hallucination)?</small>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="fw-medium text-gray-700">Answer Relevancy (Độ phù hợp)</span>
-                                <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgAnswerRelevancy)">@Model.ViewModel.AvgAnswerRelevancy.ToString("P1")</span>
-                            </div>
-                            <div class="progress mb-3" style="height: 10px;">
-                                <div class="progress-bar bg-info" role="progressbar" style="width: @(Model.ViewModel.AvgAnswerRelevancy * 100)%" aria-valuenow="@(Model.ViewModel.AvgAnswerRelevancy * 100)" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            <small class="text-muted">Câu trả lời có trực tiếp giải quyết vấn đề của câu hỏi không? Hay trả lời lan man?</small>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="fw-medium text-gray-700">Context Precision (Độ chính xác ngữ cảnh)</span>
-                                <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgContextPrecision)">@Model.ViewModel.AvgContextPrecision.ToString("P1")</span>
-                            </div>
-                            <div class="progress mb-3" style="height: 10px;">
-                                <div class="progress-bar bg-warning" role="progressbar" style="width: @(Model.ViewModel.AvgContextPrecision * 100)%" aria-valuenow="@(Model.ViewModel.AvgContextPrecision * 100)" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            <small class="text-muted">Ngữ cảnh truy xuất được có chứa thông tin đúng đắn ở các vị trí đầu tiên không?</small>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="fw-medium text-gray-700">Context Recall (Độ bao phủ ngữ cảnh)</span>
-                                <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgContextRecall)">@Model.ViewModel.AvgContextRecall.ToString("P1")</span>
-                            </div>
-                            <div class="progress mb-3" style="height: 10px;">
-                                <div class="progress-bar bg-primary" role="progressbar" style="width: @(Model.ViewModel.AvgContextRecall * 100)%" aria-valuenow="@(Model.ViewModel.AvgContextRecall * 100)" aria-valuemin="0" aria-valuemax="100"></div>
-                            </div>
-                            <small class="text-muted">Ngữ cảnh truy xuất được có đủ chứa toàn bộ thông tin để trả lời Ground Truth không?</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="card shadow-sm border-0 mb-4">
+            <div class="col-xl-7">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="material-symbols-outlined text-primary">analytics</span>
+                            <h2 class="h5 fw-bold mb-0">Các chỉ số chính nói gì?</h2>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="d-flex justify-content-between gap-2 mb-2">
+                                        <strong>Faithfulness</strong>
+                                        <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgFaithfulness)">@Model.ViewModel.AvgFaithfulness.ToString("P1")</span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-success" style="width: @(Model.ViewModel.AvgFaithfulness * 100)%"></div>
+                                    </div>
+                                    <div class="small text-muted">@GetMetricMeaning("faithfulness")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="d-flex justify-content-between gap-2 mb-2">
+                                        <strong>Relevancy</strong>
+                                        <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgAnswerRelevancy)">@Model.ViewModel.AvgAnswerRelevancy.ToString("P1")</span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-info" style="width: @(Model.ViewModel.AvgAnswerRelevancy * 100)%"></div>
+                                    </div>
+                                    <div class="small text-muted">@GetMetricMeaning("relevancy")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="d-flex justify-content-between gap-2 mb-2">
+                                        <strong>Precision</strong>
+                                        <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgContextPrecision)">@Model.ViewModel.AvgContextPrecision.ToString("P1")</span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-warning" style="width: @(Model.ViewModel.AvgContextPrecision * 100)%"></div>
+                                    </div>
+                                    <div class="small text-muted">@GetMetricMeaning("precision")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="d-flex justify-content-between gap-2 mb-2">
+                                        <strong>Recall</strong>
+                                        <span class="fw-bold @GetScoreColor(Model.ViewModel.AvgContextRecall)">@Model.ViewModel.AvgContextRecall.ToString("P1")</span>
+                                    </div>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-primary" style="width: @(Model.ViewModel.AvgContextRecall * 100)%"></div>
+                                    </div>
+                                    <div class="small text-muted">@GetMetricMeaning("recall")</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-muted small mt-3">
+                            Bộ benchmark hiện có @Model.ViewModel.QuestionCount câu hỏi. Generator: @Model.ViewModel.LlmModel. Vector store: @(rankedModels.FirstOrDefault()?.VectorStore ?? "-").
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card shadow-sm border-0 mb-4" aria-label="Bảng xếp hạng model">
         <div class="card-header bg-white py-3 border-bottom">
-            <h6 class="m-0 font-weight-bold text-primary">So sanh embedding model va strategy</h6>
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <h2 class="h6 m-0 fw-bold text-primary">Bảng xếp hạng model truy xuất</h2>
+                    <div class="text-muted small mt-1">So sánh 3 embedding model theo cùng strategy default.</div>
+                </div>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th class="px-4 py-3 border-0">Embedding</th>
-                            <th class="py-3 border-0">Strategy</th>
-                            <th class="py-3 border-0">Vector store</th>
+                            <th class="px-4 py-3 border-0">Hạng</th>
+                            <th class="py-3 border-0">Model</th>
+                            <th class="py-3 border-0">Kết luận</th>
                             <th class="py-3 border-0 text-center">Overall</th>
-                            <th class="py-3 border-0 text-center">Faithfulness</th>
-                            <th class="py-3 border-0 text-center">Relevancy</th>
                             <th class="py-3 border-0 text-center">Precision</th>
                             <th class="py-3 border-0 text-center">Recall</th>
+                            <th class="py-3 border-0 text-center">Faithfulness</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var summary in Model.ViewModel.ModelSummaries)
+                        @foreach (var item in rankedModels.Select((summary, index) => new { Summary = summary, Rank = index + 1 }))
                         {
+                            var summary = item.Summary;
+                            var verdict = item.Rank == 1
+                                ? "Nên chọn cho demo hiện tại"
+                                : summary.AvgOverallScore >= (bestModel?.AvgOverallScore ?? 0) - 0.005m
+                                    ? "Hiệu năng gần tương đương"
+                                    : "Dùng làm baseline so sánh";
+
                             <tr>
-                                <td class="px-4 py-3 fw-semibold">@summary.EmbeddingModel</td>
-                                <td class="py-3">@summary.ChunkingStrategy</td>
-                                <td class="py-3">@summary.VectorStore</td>
+                                <td class="px-4 py-3">
+                                    <span class="badge @(item.Rank == 1 ? "bg-primary" : "bg-light text-dark border") rounded-pill px-3">#@item.Rank</span>
+                                </td>
+                                <td class="py-3">
+                                    <div class="fw-semibold">@summary.EmbeddingModel</div>
+                                    <div class="text-muted small">@summary.ChunkingStrategy · @summary.VectorStore</div>
+                                </td>
+                                <td class="py-3 text-muted">@verdict</td>
                                 <td class="py-3 text-center fw-bold @GetScoreColor(summary.AvgOverallScore)">@summary.AvgOverallScore.ToString("P1")</td>
-                                <td class="py-3 text-center">@summary.AvgFaithfulness.ToString("P1")</td>
-                                <td class="py-3 text-center">@summary.AvgAnswerRelevancy.ToString("P1")</td>
                                 <td class="py-3 text-center">@summary.AvgContextPrecision.ToString("P1")</td>
                                 <td class="py-3 text-center">@summary.AvgContextRecall.ToString("P1")</td>
+                                <td class="py-3 text-center">@summary.AvgFaithfulness.ToString("P1")</td>
                             </tr>
                         }
                     </tbody>
                 </table>
             </div>
         </div>
-    </div>
+    </section>
+
+    <section class="card shadow-sm border-0 mb-4" aria-label="Token ước tính 7 ngày">
+        <div class="card-header bg-white py-3 border-bottom">
+            <h2 class="h6 m-0 fw-bold text-primary">Chi phí xử lý ước tính trong 7 ngày</h2>
+            <div class="text-muted small mt-1">
+                Bảng này giúp trả lời: model nào chạy tốn nhiều token hơn so với điểm đạt được.
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="px-4 py-3 border-0">Model</th>
+                            <th class="py-3 border-0 text-center">Lượt chạy</th>
+                            <th class="py-3 border-0 text-center">Câu hỏi đã chấm</th>
+                            <th class="py-3 border-0 text-end">Token truy xuất</th>
+                            <th class="py-3 border-0 text-end">Token prompt</th>
+                            <th class="py-3 border-0 text-end">Token trả lời</th>
+                            <th class="py-3 border-0 text-end">Tổng token</th>
+                            <th class="py-3 border-0 text-center">Điểm TB</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var usage in Model.ViewModel.WeeklyTokenUsage)
+                        {
+                            <tr>
+                                <td class="px-4 py-3">
+                                    <div class="fw-semibold">@usage.EmbeddingModel</div>
+                                    <div class="text-muted small">Generator: @usage.LlmModel</div>
+                                </td>
+                                <td class="py-3 text-center">@usage.RunCount</td>
+                                <td class="py-3 text-center">@usage.QuestionCount</td>
+                                <td class="py-3 text-end">@usage.EstimatedEmbeddingTokens.ToString("N0")</td>
+                                <td class="py-3 text-end">@usage.EstimatedPromptTokens.ToString("N0")</td>
+                                <td class="py-3 text-end">@usage.EstimatedCompletionTokens.ToString("N0")</td>
+                                <td class="py-3 text-end fw-bold">@usage.EstimatedTotalTokens.ToString("N0")</td>
+                                <td class="py-3 text-center fw-bold @GetScoreColor(usage.AvgOverallScore)">@usage.AvgOverallScore.ToString("P1")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-4 py-3 text-muted small border-top">
+                Token là số ước tính theo công thức ký tự / 4. Ollama chạy local nên không tốn tiền API; Gemini chỉ phát sinh chi phí khi gọi generator hoặc judge thật.
+            </div>
+        </div>
+    </section>
 
     <!-- Detailed Results -->
     <h5 class="fw-bold text-gray-800 mb-3 mt-5">Chi tiết từng câu hỏi</h5>

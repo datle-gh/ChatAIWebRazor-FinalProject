@@ -52,6 +52,20 @@ public sealed class DetailsModel : AppPageModel
                 AvgContextRecall = summary.AvgContextRecall,
                 AvgOverallScore = summary.AvgOverallScore
             }).ToList(),
+            WeeklyTokenUsage = result.WeeklyTokenUsage.Select(summary => new RagasTokenUsageSummaryItem
+            {
+                EmbeddingModel = summary.EmbeddingModel,
+                LlmModel = summary.LlmModel,
+                RunCount = summary.RunCount,
+                QuestionCount = summary.QuestionCount,
+                EstimatedEmbeddingTokens = summary.EstimatedEmbeddingTokens,
+                EstimatedPromptTokens = summary.EstimatedPromptTokens,
+                EstimatedCompletionTokens = summary.EstimatedCompletionTokens,
+                EstimatedTotalTokens = summary.EstimatedTotalTokens,
+                AvgOverallScore = summary.AvgOverallScore,
+                FromUtc = summary.FromUtc,
+                ToUtc = summary.ToUtc
+            }).ToList(),
             Results = result.Results.Select(item => new RagasResultDetailItem
             {
                 EmbeddingModel = item.EmbeddingModel,

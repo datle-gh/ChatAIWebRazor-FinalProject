@@ -77,7 +77,15 @@ builder.Services.AddScoped<VectorStoreRouter>();
 builder.Services.AddScoped<IVectorStoreService>(provider => provider.GetRequiredService<VectorStoreRouter>());
 builder.Services.AddScoped<IVectorSearchService>(provider => provider.GetRequiredService<VectorStoreRouter>());
 builder.Services.AddScoped<IEmbeddingBackfillService, EmbeddingBackfillService>();
-builder.Services.AddHttpClient<ILlmService, GeminiLlmService>();
+builder.Services.AddScoped<FakeLlmService>();
+builder.Services.AddHttpClient<GeminiLlmService>();
+builder.Services.AddScoped<ILlmService>(provider =>
+{
+    var settings = LlmSettings.FromConfiguration(provider.GetRequiredService<IConfiguration>());
+    return settings.Provider.Equals("Fake", StringComparison.OrdinalIgnoreCase)
+        ? provider.GetRequiredService<FakeLlmService>()
+        : provider.GetRequiredService<GeminiLlmService>();
+});
 
 builder.Services.AddScoped<PromptBuilder>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();

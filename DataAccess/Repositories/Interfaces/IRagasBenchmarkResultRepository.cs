@@ -12,5 +12,9 @@ public interface IRagasBenchmarkResultRepository
     Task<int> GetTotalAsync(CancellationToken cancellationToken = default);
     Task<RagasBenchmarkResult?> GetLatestBySubjectAsync(int subjectId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RagasBenchmarkResult>> GetLatestRunBySubjectAsync(int subjectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RagasBenchmarkResult>> GetBySubjectSinceAsync(
+        int subjectId,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RagasBenchmarkResult>> GetRecentAsync(int count, CancellationToken cancellationToken = default);
 }
