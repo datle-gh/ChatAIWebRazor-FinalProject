@@ -1,4 +1,4 @@
-﻿@page "/SystemSettings/Index"
+@page "/SystemSettings/Index"
 @model Presentation.Pages.SystemSettings.IndexModel
 
 @{
@@ -135,6 +135,81 @@
                     </div>
                 </div>
 
+                <!-- Chunking Config -->
+                <div class="card shadow-sm border-0 mb-4 rounded-4">
+                    <div class="card-header bg-white py-3 border-bottom d-flex align-items-center gap-2">
+                        <span class="material-symbols-outlined text-secondary">segment</span>
+                        <h6 class="m-0 font-weight-bold text-secondary">Cấu hình chia chunk</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="ViewModel.ChunkSizeMode" class="form-label fw-semibold">Kiểu chia chunk</label>
+                            <input asp-for="ViewModel.ChunkSizeMode" type="hidden" id="ChunkSizeMode" />
+                            <div class="dropdown">
+                                <button class="form-select text-start d-flex align-items-center gap-2" type="button" id="ChunkSizeModeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span id="ChunkSizeModeIcon" class="material-symbols-outlined text-secondary" style="font-size: 1.25rem;">auto_stories</span>
+                                    <span id="ChunkSizeModeLabel">Theo trang/slide</span>
+                                </button>
+                                <ul class="dropdown-menu w-100 shadow-sm" aria-labelledby="ChunkSizeModeDropdown">
+                                    <li>
+                                        <button class="dropdown-item d-flex align-items-center gap-2 chunk-mode-option" type="button" data-value="Page" data-icon="auto_stories" data-label="Theo trang/slide">
+                                            <span class="material-symbols-outlined text-secondary" style="font-size: 1.2rem;">auto_stories</span>
+                                            <span>Theo trang/slide</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button class="dropdown-item d-flex align-items-center gap-2 chunk-mode-option" type="button" data-value="Word" data-icon="short_text" data-label="Theo số từ">
+                                            <span class="material-symbols-outlined text-secondary" style="font-size: 1.2rem;">short_text</span>
+                                            <span>Theo số từ</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button class="dropdown-item d-flex align-items-center gap-2 chunk-mode-option" type="button" data-value="Character" data-icon="text_fields" data-label="Theo số ký tự">
+                                            <span class="material-symbols-outlined text-secondary" style="font-size: 1.2rem;">text_fields</span>
+                                            <span>Theo số ký tự</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                            <span asp-validation-for="ViewModel.ChunkSizeMode" class="text-danger small"></span>
+                            <small class="form-text text-muted">Cấu hình này áp dụng cho tài liệu được index sau khi lưu.</small>
+                        </div>
+
+                        <div class="chunk-size-config" id="chunk-size-Page">
+                            <label asp-for="ViewModel.PageChunkSize" class="form-label fw-semibold">Số trang/slide mỗi chunk</label>
+                            <input asp-for="ViewModel.PageChunkSize" type="number" class="form-control" min="1" max="20" />
+                            <span asp-validation-for="ViewModel.PageChunkSize" class="text-danger small"></span>
+                            <small class="form-text text-muted">Giá trị 1 giữ hành vi gần giống hiện tại.</small>
+                        </div>
+
+                        <div class="chunk-size-config" id="chunk-size-Word">
+                            <label asp-for="ViewModel.WordChunkSize" class="form-label fw-semibold">Số từ mỗi chunk</label>
+                            <input asp-for="ViewModel.WordChunkSize" type="number" class="form-control" min="50" max="3000" />
+                            <span asp-validation-for="ViewModel.WordChunkSize" class="text-danger small"></span>
+                        </div>
+
+                        <div class="chunk-size-config" id="chunk-size-Character">
+                            <label asp-for="ViewModel.CharacterChunkSize" class="form-label fw-semibold">Số ký tự mỗi chunk</label>
+                            <input asp-for="ViewModel.CharacterChunkSize" type="number" class="form-control" min="200" max="20000" />
+                            <span asp-validation-for="ViewModel.CharacterChunkSize" class="text-danger small"></span>
+                        </div>
+
+                        <div class="row mt-3" id="chunk-overlap-row">
+                            <div class="col-6">
+                                <label asp-for="ViewModel.ChunkOverlapSize" class="form-label fw-semibold">Overlap</label>
+                                <input asp-for="ViewModel.ChunkOverlapSize" type="number" class="form-control" min="0" max="2000" />
+                                <span asp-validation-for="ViewModel.ChunkOverlapSize" class="text-danger small"></span>
+                                <small class="form-text text-muted">Dùng cho mode từ/ký tự.</small>
+                            </div>
+                            <div class="col-6">
+                                <label asp-for="ViewModel.MinChunkCharacters" class="form-label fw-semibold">Độ dài tối thiểu</label>
+                                <input asp-for="ViewModel.MinChunkCharacters" type="number" class="form-control" min="1" max="1000" />
+                                <span asp-validation-for="ViewModel.MinChunkCharacters" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Prompts Config -->
                 <div class="card shadow-sm border-0 rounded-4">
                     <div class="card-header bg-white py-3 border-bottom d-flex align-items-center gap-2">
@@ -179,6 +254,27 @@
 
             $('#LlmProvider').change(updateProviderVisibility);
             updateProviderVisibility();
+
+            function setChunkMode(value) {
+                const selectedOption = $('.chunk-mode-option[data-value="' + value + '"]');
+                const fallbackOption = $('.chunk-mode-option[data-value="Page"]');
+                const option = selectedOption.length ? selectedOption : fallbackOption;
+                const mode = option.data('value');
+
+                $('#ChunkSizeMode').val(mode);
+                $('#ChunkSizeModeIcon').text(option.data('icon'));
+                $('#ChunkSizeModeLabel').text(option.data('label'));
+                $('.chunk-mode-option').removeClass('active');
+                option.addClass('active');
+                $('.chunk-size-config').hide();
+                $('#chunk-size-' + mode).fadeIn(150);
+                $('#chunk-overlap-row').toggle(mode !== 'Page');
+            }
+
+            $('.chunk-mode-option').click(function () {
+                setChunkMode($(this).data('value'));
+            });
+            setChunkMode($('#ChunkSizeMode').val());
 
             // Test Connection Logic
             $('.btn-test-connection').click(function () {

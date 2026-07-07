@@ -48,6 +48,12 @@ public sealed class IndexModel : AppPageModel
             TopK = ViewModel.TopK,
             SimilarityThreshold = ViewModel.SimilarityThreshold,
             MaxCitationSnippetLength = ViewModel.MaxCitationSnippetLength,
+            ChunkSizeMode = ViewModel.ChunkSizeMode,
+            PageChunkSize = ViewModel.PageChunkSize,
+            WordChunkSize = ViewModel.WordChunkSize,
+            CharacterChunkSize = ViewModel.CharacterChunkSize,
+            ChunkOverlapSize = ViewModel.ChunkOverlapSize,
+            MinChunkCharacters = ViewModel.MinChunkCharacters,
             ChatSystemPrompt = ViewModel.ChatSystemPrompt,
             EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt
         };
@@ -73,6 +79,12 @@ public sealed class IndexModel : AppPageModel
             TopK = settings.TopK,
             SimilarityThreshold = settings.SimilarityThreshold,
             MaxCitationSnippetLength = settings.MaxCitationSnippetLength,
+            ChunkSizeMode = settings.ChunkSizeMode,
+            PageChunkSize = settings.PageChunkSize,
+            WordChunkSize = settings.WordChunkSize,
+            CharacterChunkSize = settings.CharacterChunkSize,
+            ChunkOverlapSize = settings.ChunkOverlapSize,
+            MinChunkCharacters = settings.MinChunkCharacters,
             ChatSystemPrompt = settings.ChatSystemPrompt,
             EvaluationSystemPrompt = settings.EvaluationSystemPrompt
         };

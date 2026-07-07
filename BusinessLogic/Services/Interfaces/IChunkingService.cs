@@ -5,7 +5,9 @@ namespace BusinessLogic.Services.Interfaces;
 
 public interface IChunkingService
 {
-    IReadOnlyList<DocumentChunkDraft> SplitIntoChunks(IReadOnlyList<ExtractedTextSegment> segments);
+    Task<IReadOnlyList<DocumentChunkDraft>> SplitIntoChunksAsync(
+        IReadOnlyList<ExtractedTextSegment> segments,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record DocumentChunkDraft(

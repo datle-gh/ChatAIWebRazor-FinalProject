@@ -30,19 +30,20 @@ public sealed class SystemSettingsService : ISystemSettingsService
     {
         if (!File.Exists(_filePath))
         {
-            return new SystemSettingsDto();
+            return NormalizeSettings(new SystemSettingsDto());
         }
 
         try
         {
             var json = await File.ReadAllTextAsync(_filePath, cancellationToken);
-            return JsonSerializer.Deserialize<SystemSettingsDto>(json, JsonOptions)
-                   ?? new SystemSettingsDto();
+            return NormalizeSettings(
+                JsonSerializer.Deserialize<SystemSettingsDto>(json, JsonOptions)
+                ?? new SystemSettingsDto());
         }
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Failed to read settings from {FilePath}", _filePath);
-            return new SystemSettingsDto();
+            return NormalizeSettings(new SystemSettingsDto());
         }
     }
 
@@ -50,6 +51,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         SystemSettingsDto settings,
         CancellationToken cancellationToken = default)
     {
+        settings = NormalizeSettings(settings);
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
@@ -60,6 +62,33 @@ public sealed class SystemSettingsService : ISystemSettingsService
         await File.WriteAllTextAsync(_filePath, json, cancellationToken);
 
         _logger.LogInformation("System settings saved to {FilePath}", _filePath);
+    }
+
+
+    private static SystemSettingsDto NormalizeSettings(SystemSettingsDto settings)
+    {
+        settings.ChunkSizeMode = NormalizeChunkSizeMode(settings.ChunkSizeMode);
+        settings.PageChunkSize = Math.Clamp(settings.PageChunkSize, 1, 20);
+        settings.WordChunkSize = Math.Clamp(settings.WordChunkSize, 50, 3000);
+        settings.CharacterChunkSize = Math.Clamp(settings.CharacterChunkSize, 200, 20000);
+        settings.ChunkOverlapSize = Math.Clamp(settings.ChunkOverlapSize, 0, 2000);
+        settings.MinChunkCharacters = Math.Clamp(settings.MinChunkCharacters, 1, 1000);
+        return settings;
+    }
+
+    private static string NormalizeChunkSizeMode(string? mode)
+    {
+        if (string.Equals(mode, "Page", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Page";
+        }
+
+        if (string.Equals(mode, "Character", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Character";
+        }
+
+        return "Word";
     }
 
     public async Task<(bool Success, string Message)> TestConnectionAsync(
