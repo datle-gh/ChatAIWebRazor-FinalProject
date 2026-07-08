@@ -672,7 +672,9 @@ public sealed class DocumentService : IDocumentService
             "Đang chia nội dung thành chunks...",
             cancellationToken: cancellationToken);
 
-        var chunkDrafts = _chunkingService.SplitIntoChunks(extractedSegments);
+        var chunkDrafts = await _chunkingService.SplitIntoChunksAsync(
+            extractedSegments,
+            cancellationToken);
         if (chunkDrafts.Count == 0)
         {
             throw new InvalidOperationException("Không thể đọc nội dung tài liệu.");

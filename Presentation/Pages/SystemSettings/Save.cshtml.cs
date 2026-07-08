@@ -38,6 +38,12 @@ public sealed class SaveModel : AppPageModel
             TopK = ViewModel.TopK,
             SimilarityThreshold = ViewModel.SimilarityThreshold,
             MaxCitationSnippetLength = ViewModel.MaxCitationSnippetLength,
+            ChunkSizeMode = ViewModel.ChunkSizeMode,
+            PageChunkSize = ViewModel.PageChunkSize,
+            WordChunkSize = ViewModel.WordChunkSize,
+            CharacterChunkSize = ViewModel.CharacterChunkSize,
+            ChunkOverlapSize = ViewModel.ChunkOverlapSize,
+            MinChunkCharacters = ViewModel.MinChunkCharacters,
             ChatSystemPrompt = ViewModel.ChatSystemPrompt,
             EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt
         };
