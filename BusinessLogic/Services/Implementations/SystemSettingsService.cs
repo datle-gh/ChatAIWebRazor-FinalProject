@@ -1,6 +1,7 @@
 using BusinessLogic.Services.Interfaces;
 using System.Text.Json;
 using BusinessLogic.DTOs.Requests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,6 +10,7 @@ namespace BusinessLogic.Services.Implementations;
 public sealed class SystemSettingsService : ISystemSettingsService
 {
     private readonly string _filePath;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<SystemSettingsService> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -19,9 +21,11 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     public SystemSettingsService(
         IOptions<SystemSettingsFilePathOptions> options,
+        IConfiguration configuration,
         ILogger<SystemSettingsService> logger)
     {
         _filePath = options.Value.FilePath;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -30,7 +34,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
     {
         if (!File.Exists(_filePath))
         {
-            return NormalizeSettings(new SystemSettingsDto());
+            return CreateDefaultSettings();
         }
 
         try
@@ -43,7 +47,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Failed to read settings from {FilePath}", _filePath);
-            return NormalizeSettings(new SystemSettingsDto());
+            return CreateDefaultSettings();
         }
     }
 
@@ -64,6 +68,45 @@ public sealed class SystemSettingsService : ISystemSettingsService
         _logger.LogInformation("System settings saved to {FilePath}", _filePath);
     }
 
+
+
+    private SystemSettingsDto CreateDefaultSettings()
+    {
+        var settings = new SystemSettingsDto
+        {
+            TopK = ReadInt("RagSettings:TopK", 5),
+            SimilarityThreshold = ReadDecimal("RagSettings:SimilarityThreshold", 0.7m),
+            MaxCitationSnippetLength = ReadInt("RagSettings:MaxCitationSnippetLength", 250),
+            ChunkSizeMode = ReadString("RagSettings:ChunkSizeMode", "Page"),
+            PageChunkSize = ReadInt("RagSettings:PageChunkSize", 1),
+            WordChunkSize = ReadInt("RagSettings:WordChunkSize", ReadInt("RagSettings:MaxChunkTokens", 700)),
+            CharacterChunkSize = ReadInt("RagSettings:CharacterChunkSize", 3000),
+            ChunkOverlapSize = ReadInt("RagSettings:ChunkOverlapSize", ReadInt("RagSettings:ChunkOverlapTokens", 100)),
+            MinChunkCharacters = ReadInt("RagSettings:MinChunkCharacters", 30)
+        };
+
+        return NormalizeSettings(settings);
+    }
+
+    private string ReadString(string key, string fallback)
+    {
+        var value = _configuration[key];
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private int ReadInt(string key, int fallback)
+    {
+        return int.TryParse(_configuration[key], out var value) && value > 0
+            ? value
+            : fallback;
+    }
+
+    private decimal ReadDecimal(string key, decimal fallback)
+    {
+        return decimal.TryParse(_configuration[key], out var value)
+            ? value
+            : fallback;
+    }
 
     private static SystemSettingsDto NormalizeSettings(SystemSettingsDto settings)
     {
