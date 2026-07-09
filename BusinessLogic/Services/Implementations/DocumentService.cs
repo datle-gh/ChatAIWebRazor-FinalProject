@@ -681,7 +681,7 @@ public sealed class DocumentService : IDocumentService
         }
 
         var chunks = new List<DocumentChunk>();
-        var defaultEmbeddingService = _embeddingModelRegistry.GetDefault();
+        var defaultEmbeddingService = await _embeddingModelRegistry.GetConfiguredDefaultAsync(cancellationToken);
         var defaultEmbeddings = new List<float[]>();
         for (var index = 0; index < chunkDrafts.Count; index++)
         {
@@ -789,7 +789,7 @@ public sealed class DocumentService : IDocumentService
         var chunks = document.DocumentChunks
             .OrderBy(chunk => chunk.ChunkIndex)
             .ToList();
-        var defaultEmbeddingService = _embeddingModelRegistry.GetDefault();
+        var defaultEmbeddingService = await _embeddingModelRegistry.GetConfiguredDefaultAsync(cancellationToken);
         var embeddings = chunks
             .Select(chunk => DeserializeEmbedding(chunk.EmbeddingJson))
             .ToList();

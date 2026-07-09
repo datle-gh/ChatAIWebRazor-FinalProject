@@ -10,10 +10,14 @@ namespace Presentation.Pages.SystemSettings;
 public sealed class SaveModel : AppPageModel
 {
     private readonly ISystemSettingsService _settingsService;
+    private readonly IEmbeddingModelRegistry _embeddingModelRegistry;
 
-    public SaveModel(ISystemSettingsService settingsService)
+    public SaveModel(
+        ISystemSettingsService settingsService,
+        IEmbeddingModelRegistry embeddingModelRegistry)
     {
         _settingsService = settingsService;
+        _embeddingModelRegistry = embeddingModelRegistry;
     }
 
     [BindProperty]
@@ -23,6 +27,14 @@ public sealed class SaveModel : AppPageModel
     {
         if (!ModelState.IsValid)
         {
+            TempData["ErrorMessage"] = "Cấu hình không hợp lệ. Vui lòng kiểm tra lại.";
+            return RedirectToPage("/SystemSettings/Index");
+        }
+
+        var selectedEmbeddingModel = ResolveSelectedEmbeddingModel(ViewModel.EmbeddingModel);
+        if (selectedEmbeddingModel is null)
+        {
+            TempData["ErrorMessage"] = "Model embedding không hợp lệ hoặc đã bị tắt.";
             return RedirectToPage("/SystemSettings/Index");
         }
 
@@ -33,8 +45,8 @@ public sealed class SaveModel : AppPageModel
             GeminiModel = ViewModel.GeminiModel,
             OpenAiApiKey = ViewModel.OpenAiApiKey,
             OpenAiModel = ViewModel.OpenAiModel,
-            EmbeddingProvider = ViewModel.EmbeddingProvider,
-            EmbeddingModel = ViewModel.EmbeddingModel,
+            EmbeddingProvider = selectedEmbeddingModel.Provider,
+            EmbeddingModel = selectedEmbeddingModel.Key,
             TopK = ViewModel.TopK,
             SimilarityThreshold = ViewModel.SimilarityThreshold,
             MaxCitationSnippetLength = ViewModel.MaxCitationSnippetLength,
@@ -52,5 +64,19 @@ public sealed class SaveModel : AppPageModel
 
         TempData["SuccessMessage"] = "Lưu cấu hình hệ thống thành công!";
         return RedirectToPage("/SystemSettings/Index");
+    }
+
+    private EmbeddingModelOptionViewModel? ResolveSelectedEmbeddingModel(string? modelKey)
+    {
+        return _embeddingModelRegistry.GetAvailableModels()
+            .Where(model => !string.Equals(model.Provider, "Fake", StringComparison.OrdinalIgnoreCase))
+            .Select(model => new EmbeddingModelOptionViewModel
+            {
+                Key = model.Key,
+                Provider = model.Provider,
+                Model = model.Model,
+                Dimension = model.Dimension
+            })
+            .FirstOrDefault(model => string.Equals(model.Key, modelKey, StringComparison.OrdinalIgnoreCase));
     }
 }

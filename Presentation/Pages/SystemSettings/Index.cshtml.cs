@@ -10,14 +10,20 @@ namespace Presentation.Pages.SystemSettings;
 public sealed class IndexModel : AppPageModel
 {
     private readonly ISystemSettingsService _settingsService;
+    private readonly IEmbeddingModelRegistry _embeddingModelRegistry;
 
-    public IndexModel(ISystemSettingsService settingsService)
+    public IndexModel(
+        ISystemSettingsService settingsService,
+        IEmbeddingModelRegistry embeddingModelRegistry)
     {
         _settingsService = settingsService;
+        _embeddingModelRegistry = embeddingModelRegistry;
     }
 
     [BindProperty]
     public SystemSettingsViewModel ViewModel { get; set; } = new();
+
+    public IReadOnlyList<EmbeddingModelOptionViewModel> EmbeddingModels { get; private set; } = [];
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -27,37 +33,29 @@ public sealed class IndexModel : AppPageModel
         {
             ViewModel.SuccessMessage = TempData["SuccessMessage"]?.ToString();
         }
+
+        if (TempData["ErrorMessage"] != null)
+        {
+            ViewModel.ErrorMessage = TempData["ErrorMessage"]?.ToString();
+        }
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
+        LoadEmbeddingModels();
         if (!ModelState.IsValid)
         {
             return Page();
         }
 
-        var settings = new SystemSettingsDto
+        var selectedEmbeddingModel = ResolveSelectedEmbeddingModel(ViewModel.EmbeddingModel);
+        if (selectedEmbeddingModel is null)
         {
-            LlmProvider = ViewModel.LlmProvider,
-            GeminiApiKey = ViewModel.GeminiApiKey,
-            GeminiModel = ViewModel.GeminiModel,
-            OpenAiApiKey = ViewModel.OpenAiApiKey,
-            OpenAiModel = ViewModel.OpenAiModel,
-            EmbeddingProvider = ViewModel.EmbeddingProvider,
-            EmbeddingModel = ViewModel.EmbeddingModel,
-            TopK = ViewModel.TopK,
-            SimilarityThreshold = ViewModel.SimilarityThreshold,
-            MaxCitationSnippetLength = ViewModel.MaxCitationSnippetLength,
-            ChunkSizeMode = ViewModel.ChunkSizeMode,
-            PageChunkSize = ViewModel.PageChunkSize,
-            WordChunkSize = ViewModel.WordChunkSize,
-            CharacterChunkSize = ViewModel.CharacterChunkSize,
-            ChunkOverlapSize = ViewModel.ChunkOverlapSize,
-            MinChunkCharacters = ViewModel.MinChunkCharacters,
-            ChatSystemPrompt = ViewModel.ChatSystemPrompt,
-            EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt
-        };
+            ModelState.AddModelError("ViewModel.EmbeddingModel", "Model embedding không hợp lệ.");
+            return Page();
+        }
 
+        var settings = CreateSettingsDto(selectedEmbeddingModel);
         await _settingsService.SaveSettingsAsync(settings, cancellationToken);
 
         TempData["SuccessMessage"] = "Lưu cấu hình hệ thống thành công!";
@@ -66,7 +64,10 @@ public sealed class IndexModel : AppPageModel
 
     private async Task LoadSettingsAsync(CancellationToken cancellationToken)
     {
+        LoadEmbeddingModels();
         var settings = await _settingsService.GetSettingsAsync(cancellationToken);
+        var selectedEmbeddingModel = ResolveSelectedEmbeddingModel(settings.EmbeddingModel) ?? EmbeddingModels.FirstOrDefault();
+
         ViewModel = new SystemSettingsViewModel
         {
             LlmProvider = settings.LlmProvider,
@@ -74,8 +75,8 @@ public sealed class IndexModel : AppPageModel
             GeminiModel = settings.GeminiModel,
             OpenAiApiKey = settings.OpenAiApiKey,
             OpenAiModel = settings.OpenAiModel,
-            EmbeddingProvider = settings.EmbeddingProvider,
-            EmbeddingModel = settings.EmbeddingModel,
+            EmbeddingProvider = selectedEmbeddingModel?.Provider ?? settings.EmbeddingProvider,
+            EmbeddingModel = selectedEmbeddingModel?.Key ?? EmbeddingModels.FirstOrDefault()?.Key ?? settings.EmbeddingModel,
             TopK = settings.TopK,
             SimilarityThreshold = settings.SimilarityThreshold,
             MaxCitationSnippetLength = settings.MaxCitationSnippetLength,
@@ -88,5 +89,50 @@ public sealed class IndexModel : AppPageModel
             ChatSystemPrompt = settings.ChatSystemPrompt,
             EvaluationSystemPrompt = settings.EvaluationSystemPrompt
         };
+    }
+
+    private SystemSettingsDto CreateSettingsDto(EmbeddingModelOptionViewModel selectedEmbeddingModel)
+    {
+        return new SystemSettingsDto
+        {
+            LlmProvider = ViewModel.LlmProvider,
+            GeminiApiKey = ViewModel.GeminiApiKey,
+            GeminiModel = ViewModel.GeminiModel,
+            OpenAiApiKey = ViewModel.OpenAiApiKey,
+            OpenAiModel = ViewModel.OpenAiModel,
+            EmbeddingProvider = selectedEmbeddingModel.Provider,
+            EmbeddingModel = selectedEmbeddingModel.Key,
+            TopK = ViewModel.TopK,
+            SimilarityThreshold = ViewModel.SimilarityThreshold,
+            MaxCitationSnippetLength = ViewModel.MaxCitationSnippetLength,
+            ChunkSizeMode = ViewModel.ChunkSizeMode,
+            PageChunkSize = ViewModel.PageChunkSize,
+            WordChunkSize = ViewModel.WordChunkSize,
+            CharacterChunkSize = ViewModel.CharacterChunkSize,
+            ChunkOverlapSize = ViewModel.ChunkOverlapSize,
+            MinChunkCharacters = ViewModel.MinChunkCharacters,
+            ChatSystemPrompt = ViewModel.ChatSystemPrompt,
+            EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt
+        };
+    }
+
+    private void LoadEmbeddingModels()
+    {
+        EmbeddingModels = _embeddingModelRegistry.GetAvailableModels()
+            .Where(model => !string.Equals(model.Provider, "Fake", StringComparison.OrdinalIgnoreCase))
+            .Select(model => new EmbeddingModelOptionViewModel
+            {
+                Key = model.Key,
+                Provider = model.Provider,
+                Model = model.Model,
+                Dimension = model.Dimension
+            })
+            .ToList();
+    }
+
+    private EmbeddingModelOptionViewModel? ResolveSelectedEmbeddingModel(string? modelKey)
+    {
+        return EmbeddingModels.FirstOrDefault(model =>
+            string.Equals(model.Key, modelKey, StringComparison.OrdinalIgnoreCase));
     }
 }

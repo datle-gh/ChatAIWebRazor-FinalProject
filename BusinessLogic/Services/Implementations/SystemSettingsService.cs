@@ -74,6 +74,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
     {
         var settings = new SystemSettingsDto
         {
+            EmbeddingProvider = ReadString("Embedding:Provider", "Ollama"),
+            EmbeddingModel = ReadString("Embedding:DefaultModelKey", ReadString("Embedding:DefaultModel", "bge-m3")),
             TopK = ReadInt("RagSettings:TopK", 5),
             SimilarityThreshold = ReadDecimal("RagSettings:SimilarityThreshold", 0.7m),
             MaxCitationSnippetLength = ReadInt("RagSettings:MaxCitationSnippetLength", 250),
@@ -110,6 +112,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     private static SystemSettingsDto NormalizeSettings(SystemSettingsDto settings)
     {
+        settings.EmbeddingProvider = string.IsNullOrWhiteSpace(settings.EmbeddingProvider) ? "Ollama" : settings.EmbeddingProvider.Trim();
+        settings.EmbeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModel) ? "bge-m3" : settings.EmbeddingModel.Trim();
         settings.ChunkSizeMode = NormalizeChunkSizeMode(settings.ChunkSizeMode);
         settings.PageChunkSize = Math.Clamp(settings.PageChunkSize, 1, 20);
         settings.WordChunkSize = Math.Clamp(settings.WordChunkSize, 50, 3000);

@@ -18,3 +18,13 @@ public sealed record UserTokenUsageAggregate(
     int TotalTokens,
     int AnswerCount,
     DateTime? LastUsedAt);
+
+public sealed record EmbeddingModelTokenUsageAggregate(
+    string EmbeddingModel,
+    int TokenCount,
+    int EmbeddingCount);
+
+public sealed record DailyEmbeddingModelTokenUsageAggregate(
+    DateTime UsageDate,
+    string EmbeddingModel,
+    int TokenCount);

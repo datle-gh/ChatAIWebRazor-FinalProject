@@ -22,7 +22,16 @@
         </div>
     }
     
-    <div id="testConnectionAlert" class="alert d-none alert-dismissible fade show shadow-sm border-0" role="alert">
+    
+    @if (!string.IsNullOrEmpty(Model.ViewModel.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show shadow-sm border-0" role="alert">
+            <span class="material-symbols-outlined fs-5 align-text-bottom me-1">error</span>
+            @Model.ViewModel.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+<div id="testConnectionAlert" class="alert d-none alert-dismissible fade show shadow-sm border-0" role="alert">
         <span class="material-symbols-outlined fs-5 align-text-bottom me-1 alert-icon"></span>
         <span class="alert-message"></span>
         <button type="button" class="btn-close" onclick="$(this).parent().addClass('d-none')"></button>
@@ -89,19 +98,31 @@
                         <h6 class="m-0 font-weight-bold text-success">Cấu hình mô hình Vector (Embedding)</h6>
                     </div>
                     <div class="card-body bg-light rounded-bottom-4 pt-1">
+                        <input asp-for="ViewModel.EmbeddingProvider" type="hidden" id="EmbeddingProvider" />
+
                         <div class="mb-3 bg-white p-3 rounded shadow-sm">
-                            <label class="form-label fw-semibold">Embedding Provider</label>
-                            <select asp-for="ViewModel.EmbeddingProvider" class="form-select border-0 bg-light" id="EmbeddingProvider">
-                                <option value="Fake">Fake (Test/Mock)</option>
-                                <option value="Gemini">Google Gemini</option>
-                                <option value="OpenAI">OpenAI</option>
+                            <label asp-for="ViewModel.EmbeddingModel" class="form-label fw-semibold">Model Embedding</label>
+                            <select asp-for="ViewModel.EmbeddingModel" class="form-select border-0 bg-light" id="EmbeddingModel">
+                                @foreach (var embeddingModel in Model.EmbeddingModels)
+                                {
+                                    <option value="@embeddingModel.Key" data-provider="@embeddingModel.Provider" data-model="@embeddingModel.Model" data-dimension="@embeddingModel.Dimension">
+                                        @embeddingModel.Label
+                                    </option>
+                                }
                             </select>
+                            <span asp-validation-for="ViewModel.EmbeddingModel" class="text-danger small"></span>
+                            <small class="form-text text-muted">Chỉ hiển thị các model embedding thật đang bật trong dự án.</small>
                         </div>
 
-                        <div class="mb-3">
-                            <label asp-for="ViewModel.EmbeddingModel" class="form-label fw-semibold text-muted small text-uppercase">Tên Model Embedding</label>
-                            <input asp-for="ViewModel.EmbeddingModel" class="form-control" placeholder="text-embedding-004 hoặc text-embedding-3-small" />
-                            <small class="form-text text-muted">Lưu ý: Provider của LlmProvider sẽ chia sẻ API Key cho EmbeddingProvider (hiện tại).</small>
+                        <div class="d-flex flex-wrap gap-2 small text-body" id="EmbeddingModelMeta">
+                            <span class="badge rounded-pill bg-white text-dark border border-secondary-subtle shadow-sm d-inline-flex align-items-center gap-1">
+                                <span class="material-symbols-outlined text-success" style="font-size: 1rem;">hub</span>
+                                <span id="EmbeddingProviderLabel">@Model.ViewModel.EmbeddingProvider</span>
+                            </span>
+                            <span class="badge rounded-pill bg-white text-dark border border-secondary-subtle shadow-sm d-inline-flex align-items-center gap-1">
+                                <span class="material-symbols-outlined text-success" style="font-size: 1rem;">memory</span>
+                                <span id="EmbeddingModelNameLabel"></span>
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -254,6 +275,18 @@
 
             $('#LlmProvider').change(updateProviderVisibility);
             updateProviderVisibility();
+            function updateEmbeddingModelMeta() {
+                const selected = $('#EmbeddingModel option:selected');
+                const provider = selected.data('provider') || '';
+                const model = selected.data('model') || '';
+
+                $('#EmbeddingProvider').val(provider);
+                $('#EmbeddingProviderLabel').text(provider || 'N/A');
+                $('#EmbeddingModelNameLabel').text(model || selected.val() || 'N/A');
+            }
+
+            $('#EmbeddingModel').change(updateEmbeddingModelMeta);
+            updateEmbeddingModelMeta();
 
             function setChunkMode(value) {
                 const selectedOption = $('.chunk-mode-option[data-value="' + value + '"]');
@@ -328,5 +361,3 @@
         });
     </script>
 }
-
-
