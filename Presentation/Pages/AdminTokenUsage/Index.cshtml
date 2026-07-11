@@ -11,6 +11,14 @@
         new { Key = "month", Label = "Tháng này", Items = Model.ViewModel.EmbeddingUsage.ThisMonth }
     };
 
+    var embeddingChartColors = new[] { "#2563eb", "#dc2626", "#84cc16", "#f97316", "#9333ea", "#0891b2", "#be123c", "#ca8a04" };
+    var embeddingModelColors = embeddingPeriods
+        .SelectMany(period => period.Items)
+        .Select(item => item.EmbeddingModel)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(model => model, StringComparer.OrdinalIgnoreCase)
+        .Select((model, index) => new { model, Color = embeddingChartColors[index % embeddingChartColors.Length] })
+        .ToDictionary(item => item.model, item => item.Color, StringComparer.OrdinalIgnoreCase);
     var dailyChart = Model.ViewModel.DailyEmbeddingUsage;
     var chartWidth = 980;
     var chartHeight = 340;
@@ -32,20 +40,19 @@
 <style>
 
     .embedding-token-chart {
-        min-height: 180px;
+        overflow-x: auto;
+    }
+
+    .embedding-token-panel {
+        min-width: 620px;
     }
 
     .embedding-token-row {
         display: grid;
-        grid-template-columns: minmax(160px, 240px) minmax(160px, 1fr) minmax(96px, auto);
+        grid-template-columns: minmax(150px, 220px) minmax(320px, 1fr) minmax(88px, auto);
         align-items: center;
-        gap: 1rem;
-        padding: 0.8rem 0;
-        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-    }
-
-    .embedding-token-row:last-child {
-        border-bottom: 0;
+        gap: 1.25rem;
+        min-height: 56px;
     }
 
     .embedding-token-label {
@@ -55,19 +62,32 @@
         min-width: 0;
     }
 
-    .embedding-token-track {
-        height: 18px;
-        overflow: hidden;
-        background: #eef2f7;
-        border-radius: 999px;
-        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+    .embedding-token-plot {
+        position: relative;
+        min-height: 32px;
+        padding: 7px 0;
+    }
+
+    .embedding-token-grid {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        justify-content: space-between;
+        pointer-events: none;
+    }
+
+    .embedding-token-grid span {
+        width: 1px;
+        height: 100%;
+        background: #dbe1ea;
     }
 
     .embedding-token-bar {
-        height: 100%;
-        min-width: 4px;
-        background: linear-gradient(90deg, #0ea5e9, #2563eb);
-        border-radius: inherit;
+        position: relative;
+        z-index: 1;
+        height: 18px;
+        min-width: 2px;
+        border-radius: 1px;
         transition: width 180ms ease;
     }
 
@@ -78,6 +98,33 @@
         white-space: nowrap;
     }
 
+    .embedding-token-axis {
+        display: grid;
+        grid-template-columns: minmax(150px, 220px) minmax(320px, 1fr) minmax(88px, auto);
+        gap: 1.25rem;
+        margin-bottom: 0.55rem;
+    }
+
+    .embedding-token-axis-values {
+        position: relative;
+        height: 20px;
+        color: #64748b;
+        font-size: 11px;
+    }
+
+    .embedding-token-axis-values span {
+        position: absolute;
+        transform: translateX(-50%);
+        white-space: nowrap;
+    }
+
+    .embedding-token-axis-values span:first-child {
+        transform: none;
+    }
+
+    .embedding-token-axis-values span:last-child {
+        transform: translateX(-100%);
+    }
     .token-line-chart-wrap {
         overflow-x: auto;
     }
@@ -108,11 +155,25 @@
         stroke-width: 2.5;
         stroke-linecap: round;
         stroke-linejoin: round;
+        transition: stroke-width 160ms ease;
     }
 
     .chart-point {
         stroke: #ffffff;
         stroke-width: 1.6;
+    }
+
+    .chart-series {
+        opacity: 1;
+        transition: opacity 180ms ease;
+    }
+
+    .chart-series.is-dimmed {
+        opacity: 0.12;
+    }
+
+    .chart-series.is-active .chart-line {
+        stroke-width: 3.5;
     }
 
     .chart-legend {
@@ -125,8 +186,25 @@
         display: inline-flex;
         align-items: center;
         gap: 0.45rem;
+        padding: 0.2rem 0.25rem;
+        border: 0;
+        border-radius: 0.25rem;
+        background: transparent;
         font-weight: 600;
         color: #334155;
+        cursor: pointer;
+        transition: opacity 180ms ease, background-color 180ms ease;
+    }
+
+    .chart-legend-item:hover,
+    .chart-legend-item:focus-visible,
+    .chart-legend-item.is-active {
+        background: #f1f5f9;
+        outline: none;
+    }
+
+    .chart-legend.has-highlight .chart-legend-item:not(.is-active) {
+        opacity: 0.35;
     }
 
     .chart-legend-swatch {
@@ -137,13 +215,9 @@
     }
 
     @@media (max-width: 768px) {
-        .embedding-token-row {
-            grid-template-columns: 1fr;
-            gap: 0.5rem;
-        }
-
-        .embedding-token-value {
-            text-align: left;
+        .embedding-token-chart {
+            margin-inline: -0.5rem;
+            padding-inline: 0.5rem;
         }
     }
 </style>
@@ -215,6 +289,9 @@
             @foreach (var period in embeddingPeriods)
             {
                 var maxTokens = Math.Max(1, period.Items.Count == 0 ? 1 : period.Items.Max(item => item.TokenCount));
+                var axisTicks = Enumerable.Range(0, 5)
+                    .Select(index => new { Position = index * 25, Value = (int)Math.Round(maxTokens * index / 4d) })
+                    .ToList();
                 <div class="embedding-token-panel @(period.Key == "today" ? string.Empty : "d-none")" data-embedding-period-panel="@period.Key">
                     @if (period.Items.Count == 0)
                     {
@@ -225,16 +302,34 @@
                     }
                     else
                     {
+                        <div class="embedding-token-axis" aria-hidden="true">
+                            <div></div>
+                            <div class="embedding-token-axis-values">
+                                @foreach (var tick in axisTicks)
+                                {
+                                    <span style="left:@tick.Position%">@tick.Value.ToString("N0")</span>
+                                }
+                            </div>
+                            <div></div>
+                        </div>
+
                         foreach (var item in period.Items)
                         {
-                            var barWidth = Math.Max(4, (int)Math.Round(item.TokenCount * 100d / maxTokens));
+                            var barWidth = Math.Max(0, (int)Math.Round(item.TokenCount * 100d / maxTokens));
+                            var barColor = embeddingModelColors.TryGetValue(item.EmbeddingModel, out var color) ? color : "#2563eb";
                             <div class="embedding-token-row">
                                 <div class="embedding-token-label">
                                     <span class="fw-semibold">@item.EmbeddingModel</span>
                                     <span class="text-muted small">@item.EmbeddingCount.ToString("N0") lượt embedding</span>
                                 </div>
-                                <div class="embedding-token-track" aria-hidden="true">
-                                    <div class="embedding-token-bar" style="width:@barWidth%"></div>
+                                <div class="embedding-token-plot" aria-label="@item.EmbeddingModel: @item.TokenCount.ToString("N0") token">
+                                    <div class="embedding-token-grid" aria-hidden="true">
+                                        @foreach (var tick in axisTicks)
+                                        {
+                                            <span></span>
+                                        }
+                                    </div>
+                                    <div class="embedding-token-bar" style="width:@barWidth%; background-color:@barColor" title="@item.EmbeddingModel: @item.TokenCount.ToString("N0") token"></div>
                                 </div>
                                 <div class="embedding-token-value">@item.TokenCount.ToString("N0")</div>
                             </div>
@@ -253,13 +348,17 @@
             </div>
             @if (dailyChart.Series.Count > 0 && dailyChart.MaxTokenCount > 0)
             {
-                <div class="chart-legend">
-                    @foreach (var series in dailyChart.Series)
+                <div class="chart-legend" data-line-chart-legend>
+                    @for (var seriesIndex = 0; seriesIndex < dailyChart.Series.Count; seriesIndex++)
                     {
-                        <span class="chart-legend-item">
+                        var series = dailyChart.Series[seriesIndex];
+                        <button type="button"
+                                class="chart-legend-item"
+                                data-line-series-legend="@seriesIndex"
+                                aria-label="Làm nổi bật model @series.EmbeddingModel">
                             <span class="chart-legend-swatch" style="background:@series.Color"></span>
                             @series.EmbeddingModel
-                        </span>
+                        </button>
                     }
                 </div>
             }
@@ -295,8 +394,9 @@
                         }
                     }
 
-                    @foreach (var series in dailyChart.Series)
+                    @for (var seriesIndex = 0; seriesIndex < dailyChart.Series.Count; seriesIndex++)
                     {
+                        var series = dailyChart.Series[seriesIndex];
                         var points = new List<string>();
                         for (var index = 0; index < series.Values.Count; index++)
                         {
@@ -306,21 +406,23 @@
                         }
 
                         var pointText = string.Join(" ", points);
-                        <polyline class="chart-line" points="@pointText" stroke="@series.Color" />
+                        <g class="chart-series" data-line-chart-series="@seriesIndex">
+                            <polyline class="chart-line" points="@pointText" stroke="@series.Color" />
 
-                        for (var index = 0; index < series.Values.Count; index++)
-                        {
-                            if (series.Values[index] <= 0)
+                            @for (var index = 0; index < series.Values.Count; index++)
                             {
-                                continue;
-                            }
+                                if (series.Values[index] <= 0)
+                                {
+                                    continue;
+                                }
 
-                            var x = paddingLeft + index * xStep;
-                            var y = paddingTop + plotHeight - (series.Values[index] * plotHeight / (double)maxDailyTokens);
-                            <circle class="chart-point" cx="@x.ToString("0.##", CultureInfo.InvariantCulture)" cy="@y.ToString("0.##", CultureInfo.InvariantCulture)" r="3.5" fill="@series.Color">
-                                <title>@series.EmbeddingModel - @dailyChart.Labels[index]: @series.Values[index].ToString("N0") token</title>
-                            </circle>
-                        }
+                                var x = paddingLeft + index * xStep;
+                                var y = paddingTop + plotHeight - (series.Values[index] * plotHeight / (double)maxDailyTokens);
+                                <circle class="chart-point" cx="@x.ToString("0.##", CultureInfo.InvariantCulture)" cy="@y.ToString("0.##", CultureInfo.InvariantCulture)" r="3.5" fill="@series.Color">
+                                    <title>@series.EmbeddingModel - @dailyChart.Labels[index]: @series.Values[index].ToString("N0") token</title>
+                                </circle>
+                            }
+                        </g>
                     }
                 </svg>
             </div>
@@ -334,6 +436,48 @@
         document.addEventListener('DOMContentLoaded', function () {
             const buttons = Array.from(document.querySelectorAll('[data-embedding-period]'));
             const panels = Array.from(document.querySelectorAll('[data-embedding-period-panel]'));
+            const lineChartLegend = document.querySelector('[data-line-chart-legend]');
+            const lineSeriesLegends = Array.from(document.querySelectorAll('[data-line-series-legend]'));
+            const lineChartSeries = Array.from(document.querySelectorAll('[data-line-chart-series]'));
+
+            function highlightLineSeries(seriesIndex) {
+                if (!lineChartLegend) {
+                    return;
+                }
+
+                lineChartLegend.classList.add('has-highlight');
+                lineSeriesLegends.forEach(function (item) {
+                    item.classList.toggle('is-active', item.dataset.lineSeriesLegend === seriesIndex);
+                });
+                lineChartSeries.forEach(function (series) {
+                    const active = series.dataset.lineChartSeries === seriesIndex;
+                    series.classList.toggle('is-active', active);
+                    series.classList.toggle('is-dimmed', !active);
+                });
+            }
+
+            function clearLineSeriesHighlight() {
+                if (lineChartLegend) {
+                    lineChartLegend.classList.remove('has-highlight');
+                }
+                lineSeriesLegends.forEach(function (item) {
+                    item.classList.remove('is-active');
+                });
+                lineChartSeries.forEach(function (series) {
+                    series.classList.remove('is-active', 'is-dimmed');
+                });
+            }
+
+            lineSeriesLegends.forEach(function (item) {
+                item.addEventListener('pointerenter', function () {
+                    highlightLineSeries(item.dataset.lineSeriesLegend);
+                });
+                item.addEventListener('pointerleave', clearLineSeriesHighlight);
+                item.addEventListener('focus', function () {
+                    highlightLineSeries(item.dataset.lineSeriesLegend);
+                });
+                item.addEventListener('blur', clearLineSeriesHighlight);
+            });
 
             buttons.forEach(function (button) {
                 button.addEventListener('click', function () {
