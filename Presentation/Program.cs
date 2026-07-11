@@ -78,26 +78,22 @@ builder.Services.AddScoped<VectorStoreRouter>();
 builder.Services.AddScoped<IVectorStoreService>(provider => provider.GetRequiredService<VectorStoreRouter>());
 builder.Services.AddScoped<IVectorSearchService>(provider => provider.GetRequiredService<VectorStoreRouter>());
 builder.Services.AddScoped<IEmbeddingBackfillService, EmbeddingBackfillService>();
-builder.Services.AddScoped<FakeLlmService>();
-builder.Services.AddHttpClient<GeminiLlmService>();
-builder.Services.AddScoped<ILlmService>(provider =>
-{
-    var settings = LlmSettings.FromConfiguration(provider.GetRequiredService<IConfiguration>());
-    return settings.Provider.Equals("Fake", StringComparison.OrdinalIgnoreCase)
-        ? provider.GetRequiredService<FakeLlmService>()
-        : provider.GetRequiredService<GeminiLlmService>();
-});
+builder.Services.AddHttpClient<ILlmService, GeminiLlmService>();
 
 builder.Services.AddScoped<PromptBuilder>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
 builder.Services.AddScoped<IUploadProgressReporter, SignalRUploadProgressReporter>();
+builder.Services.AddSingleton<IRagasEvaluationJobQueue, RagasEvaluationJobQueue>();
+builder.Services.AddHostedService<RagasEvaluationBackgroundService>();
+builder.Services.AddScoped<IRagasEvaluationProgressReporter, SignalRRagasEvaluationProgressReporter>();
 builder.Services.AddScoped<ISubjectRealtimeNotifier, SignalRSubjectRealtimeNotifier>();
 builder.Services.AddScoped<INotificationRealtimeNotifier, SignalRNotificationRealtimeNotifier>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
 builder.Services.AddScoped<IRagasEvaluationService, RagasEvaluationService>();
+builder.Services.AddSingleton<IBenchmarkMetricCalculator, BenchmarkMetricCalculator>();
 builder.Services.AddHttpClient<IRagasEvaluatorClient, RagasEvaluatorClient>();
 
 builder.Services.Configure<SystemSettingsFilePathOptions>(options =>
@@ -116,6 +112,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ISubjectRepository, SubjectRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<IEvaluationQuestionRepository, EvaluationQuestionRepository>();
+builder.Services.AddScoped<IEvaluationQuestionGoldChunkRepository, EvaluationQuestionGoldChunkRepository>();
 builder.Services.AddScoped<IRagasBenchmarkResultRepository, RagasBenchmarkResultRepository>();
 
 var app = builder.Build();
@@ -139,6 +136,7 @@ app.UseAuthorization();
 
 app.MapRazorPages();
 app.MapHub<UploadProgressHub>("/hubs/upload-progress");
+app.MapHub<RagasEvaluationProgressHub>("/hubs/ragas-evaluation-progress");
 app.MapHub<SubjectManagementHub>("/hubs/subject-management");
 app.MapHub<NotificationHub>("/hubs/notifications");
 

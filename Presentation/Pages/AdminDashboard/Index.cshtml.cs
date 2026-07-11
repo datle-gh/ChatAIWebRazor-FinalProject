@@ -51,7 +51,7 @@ public sealed class IndexModel : AppPageModel
                 SubjectName = b.SubjectName,
                 EmbeddingModel = b.EmbeddingModel,
                 LlmModel = b.LlmModel,
-                OverallScore = b.OverallScore,
+                RecallAt5 = b.RecallAt5,
                 CreatedAt = b.CreatedAt
             }).ToList()
         };

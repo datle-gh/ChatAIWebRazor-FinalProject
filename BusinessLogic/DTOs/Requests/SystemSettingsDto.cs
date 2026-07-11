@@ -2,11 +2,6 @@ namespace BusinessLogic.DTOs.Requests;
 
 public sealed class SystemSettingsDto
 {
-    public string LlmProvider { get; set; } = "Fake";
-    public string GeminiApiKey { get; set; } = string.Empty;
-    public string GeminiModel { get; set; } = "gemini-2.0-flash";
-    public string OpenAiApiKey { get; set; } = string.Empty;
-    public string OpenAiModel { get; set; } = "gpt-4o-mini";
     public string EmbeddingProvider { get; set; } = "Ollama";
     public string EmbeddingModel { get; set; } = "bge-m3";
     public int TopK { get; set; } = 5;

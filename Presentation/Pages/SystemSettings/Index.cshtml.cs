@@ -70,11 +70,6 @@ public sealed class IndexModel : AppPageModel
 
         ViewModel = new SystemSettingsViewModel
         {
-            LlmProvider = settings.LlmProvider,
-            GeminiApiKey = settings.GeminiApiKey,
-            GeminiModel = settings.GeminiModel,
-            OpenAiApiKey = settings.OpenAiApiKey,
-            OpenAiModel = settings.OpenAiModel,
             EmbeddingProvider = selectedEmbeddingModel?.Provider ?? settings.EmbeddingProvider,
             EmbeddingModel = selectedEmbeddingModel?.Key ?? EmbeddingModels.FirstOrDefault()?.Key ?? settings.EmbeddingModel,
             TopK = settings.TopK,
@@ -95,11 +90,6 @@ public sealed class IndexModel : AppPageModel
     {
         return new SystemSettingsDto
         {
-            LlmProvider = ViewModel.LlmProvider,
-            GeminiApiKey = ViewModel.GeminiApiKey,
-            GeminiModel = ViewModel.GeminiModel,
-            OpenAiApiKey = ViewModel.OpenAiApiKey,
-            OpenAiModel = ViewModel.OpenAiModel,
             EmbeddingProvider = selectedEmbeddingModel.Provider,
             EmbeddingModel = selectedEmbeddingModel.Key,
             TopK = ViewModel.TopK,

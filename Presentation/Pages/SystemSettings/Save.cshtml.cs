@@ -40,11 +40,6 @@ public sealed class SaveModel : AppPageModel
 
         var settings = new SystemSettingsDto
         {
-            LlmProvider = ViewModel.LlmProvider,
-            GeminiApiKey = ViewModel.GeminiApiKey,
-            GeminiModel = ViewModel.GeminiModel,
-            OpenAiApiKey = ViewModel.OpenAiApiKey,
-            OpenAiModel = ViewModel.OpenAiModel,
             EmbeddingProvider = selectedEmbeddingModel.Provider,
             EmbeddingModel = selectedEmbeddingModel.Key,
             TopK = ViewModel.TopK,

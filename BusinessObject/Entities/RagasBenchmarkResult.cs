@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace BusinessObject.Entities;
@@ -23,15 +23,41 @@ public partial class RagasBenchmarkResult
 
     public string? RetrievedContextsJson { get; set; }
 
+    public string? RetrievedChunkIdsJson { get; set; }
+
+    public string? CitationChunkIdsJson { get; set; }
+
+    public decimal? RecallAt5 { get; set; }
+
+    public decimal? MrrAt10 { get; set; }
+
+    public decimal? NdcgAt5 { get; set; }
+
+    public decimal? AnswerCorrectness { get; set; }
+
     public decimal? Faithfulness { get; set; }
 
-    public decimal? AnswerRelevancy { get; set; }
+    public decimal? CitationPrecision { get; set; }
 
-    public decimal? ContextPrecision { get; set; }
+    public decimal? CitationRecall { get; set; }
 
-    public decimal? ContextRecall { get; set; }
+    public decimal? CitationF1 { get; set; }
 
-    public decimal? OverallScore { get; set; }
+    public bool ExpectedNoAnswer { get; set; }
+
+    public bool PredictedNoAnswer { get; set; }
+
+    public long EmbeddingLatencyMs { get; set; }
+
+    public long RetrievalLatencyMs { get; set; }
+
+    public long GenerationLatencyMs { get; set; }
+
+    public long EndToEndLatencyMs { get; set; }
+
+
+
+
 
     public DateTime CreatedAt { get; set; }
 

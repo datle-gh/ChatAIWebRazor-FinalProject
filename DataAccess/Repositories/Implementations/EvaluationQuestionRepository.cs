@@ -19,6 +19,9 @@ public sealed class EvaluationQuestionRepository : IEvaluationQuestionRepository
             .AsNoTracking()
             .Include(eq => eq.Subject)
             .Include(eq => eq.CreatedByNavigation)
+            .Include(eq => eq.GoldChunks)
+                .ThenInclude(gold => gold.DocumentChunk)
+                    .ThenInclude(chunk => chunk.Document)
             .Where(eq => eq.SubjectId == subjectId)
             .OrderByDescending(eq => eq.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -29,6 +32,9 @@ public sealed class EvaluationQuestionRepository : IEvaluationQuestionRepository
         return await _context.EvaluationQuestions
             .Include(eq => eq.Subject)
             .Include(eq => eq.CreatedByNavigation)
+            .Include(eq => eq.GoldChunks)
+                .ThenInclude(gold => gold.DocumentChunk)
+                    .ThenInclude(chunk => chunk.Document)
             .FirstOrDefaultAsync(eq => eq.Id == id, cancellationToken);
     }
 

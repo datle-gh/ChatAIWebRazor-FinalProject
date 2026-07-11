@@ -32,7 +32,7 @@ public sealed class IndexModel : AppPageModel
                     SubjectName = summary.SubjectName,
                     QuestionCount = summary.QuestionCount,
                     BenchmarkRunCount = summary.BenchmarkRunCount,
-                    LastOverallScore = summary.LastOverallScore,
+                    LastRecallAt5 = summary.LastRecallAt5,
                     LastRunDate = summary.LastRunDate
                 })
                 .ToList()

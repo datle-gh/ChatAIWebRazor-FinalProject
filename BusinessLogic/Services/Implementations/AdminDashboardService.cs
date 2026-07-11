@@ -84,7 +84,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                     result.EvaluationQuestion.Subject.SubjectName,
                     result.EmbeddingModel,
                     result.LlmModel,
-                    result.OverallScore,
+                    result.RecallAt5,
                     result.CreatedAt))
                 .ToList();
 

@@ -342,11 +342,11 @@
                                         </span>
                                     </td>
                                     <td class="text-center">
-                                        @if (benchmark.OverallScore.HasValue)
+                                        @if (benchmark.RecallAt5.HasValue)
                                         {
-                                            var scoreColor = benchmark.OverallScore >= 0.8m ? "#059669" : (benchmark.OverallScore >= 0.5m ? "#d97706" : "#ba1a1a");
+                                            var scoreColor = benchmark.RecallAt5 >= 0.8m ? "#059669" : (benchmark.RecallAt5 >= 0.5m ? "#d97706" : "#ba1a1a");
                                             <span class="text-sm font-bold" style="color:@scoreColor">
-                                                @benchmark.OverallScore.Value.ToString("P1")
+                                                @benchmark.RecallAt5.Value.ToString("P1")
                                             </span>
                                         }
                                         else
