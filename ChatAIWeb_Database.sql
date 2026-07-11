@@ -965,6 +965,65 @@ BEGIN
         INSERT (DocumentId, ChunkIndex, Content, PageNumber, SlideNumber, TokenCount, VectorId, EmbeddingModel, EmbeddingJson)
         VALUES (@Vnr202DocumentId, source.PageNumber, source.Content, source.PageNumber, NULL, source.TokenCount, NULL, NULL, NULL);
 
+    /* =====================================================
+       Seed: embedding token usage demo for AdminTokenUsage
+       UTC timestamps corresponding to noon in Vietnam (06/07/2026 - 12/07/2026).
+       SeedDemo rows have no vector payload and are excluded
+       from retrieval by the EmbeddingJson != NULL condition.
+       ===================================================== */
+    DELETE embedding
+    FROM dbo.DocumentChunkEmbeddings embedding
+    INNER JOIN dbo.DocumentChunks chunk ON chunk.Id = embedding.DocumentChunkId
+    WHERE chunk.DocumentId = @Vnr202DocumentId
+      AND embedding.VectorStore = N'SeedDemo';
+
+    DECLARE @EmbeddingUsageDemoModels TABLE
+    (
+        EmbeddingModel NVARCHAR(100) NOT NULL PRIMARY KEY,
+        EmbeddingProvider NVARCHAR(50) NOT NULL,
+        Dimension INT NOT NULL,
+        TargetChunkCount INT NOT NULL,
+        DayOffset INT NOT NULL
+    );
+
+    INSERT INTO @EmbeddingUsageDemoModels
+        (EmbeddingModel, EmbeddingProvider, Dimension, TargetChunkCount, DayOffset)
+    VALUES
+        (N'mxbai-embed-large', N'Ollama', 1024, 20, 2),
+        (N'bge-m3', N'Ollama', 1024, 18, 0),
+        (N'nomic-embed-text', N'Ollama', 768, 15, 1),
+        (N'phobert-base', N'PhoBert', 768, 12, 3);
+
+    ;WITH RankedChunks AS
+    (
+        SELECT
+            chunk.Id,
+            ROW_NUMBER() OVER (ORDER BY chunk.PageNumber, chunk.Id) AS ChunkRank
+        FROM dbo.DocumentChunks chunk
+        WHERE chunk.DocumentId = @Vnr202DocumentId
+    )
+    INSERT INTO dbo.DocumentChunkEmbeddings
+        (DocumentChunkId, EmbeddingModel, EmbeddingProvider, Dimension, VectorId, VectorStore, EmbeddingJson, CreatedAt)
+    SELECT
+        chunk.Id,
+        model.EmbeddingModel,
+        model.EmbeddingProvider,
+        model.Dimension,
+        NULL,
+        N'SeedDemo',
+        NULL,
+        DATEADD(DAY, (chunk.ChunkRank - 1 + model.DayOffset) % 7, CONVERT(DATETIME2(0), '2026-07-06T05:00:00'))
+    FROM RankedChunks chunk
+    CROSS JOIN @EmbeddingUsageDemoModels model
+    WHERE chunk.ChunkRank <= model.TargetChunkCount
+      AND NOT EXISTS
+      (
+          SELECT 1
+          FROM dbo.DocumentChunkEmbeddings embedding
+          WHERE embedding.DocumentChunkId = chunk.Id
+            AND embedding.EmbeddingModel = model.EmbeddingModel
+      );
+
     DECLARE @Vnr202Gold TABLE
     (
         Ordinal INT NOT NULL,
