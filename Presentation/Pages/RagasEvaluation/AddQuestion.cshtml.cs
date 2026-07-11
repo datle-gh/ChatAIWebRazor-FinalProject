@@ -26,13 +26,20 @@ public sealed class AddQuestionModel : AppPageModel
         }
 
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        await _evaluationService.AddQuestionAsync(
+        var result = await _evaluationService.AddQuestionAsync(
             model.SubjectId,
             model.Question,
             model.GroundTruthAnswer,
             userId,
             cancellationToken);
 
-        return RedirectToPage("/RagasEvaluation/Questions", new { subjectId = model.SubjectId });
+        if (!result.Success || !result.QuestionId.HasValue)
+        {
+            TempData["ErrorMessage"] = result.Message;
+            return RedirectToPage("/RagasEvaluation/Questions", new { subjectId = model.SubjectId });
+        }
+
+        TempData["SuccessMessage"] = result.Message;
+        return RedirectToPage("/RagasEvaluation/QuestionSetup", new { id = result.QuestionId.Value });
     }
 }

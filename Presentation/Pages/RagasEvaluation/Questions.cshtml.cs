@@ -1,4 +1,4 @@
-using BusinessLogic.Services.Interfaces;
+﻿using BusinessLogic.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Presentation.Models;
 
@@ -23,10 +23,11 @@ public sealed class QuestionsModel : AppPageModel
     public async Task OnGetAsync(int subjectId, CancellationToken cancellationToken)
     {
         var questions = await _evaluationService.GetQuestionsAsync(subjectId, cancellationToken);
+        var readiness = await _evaluationService.GetBenchmarkReadinessAsync(subjectId, cancellationToken);
         ViewModel = new RagasQuestionsViewModel
         {
             SubjectId = subjectId,
-            SubjectName = questions.FirstOrDefault()?.SubjectName ?? $"Mon hoc {subjectId}",
+            SubjectName = questions.FirstOrDefault()?.SubjectName ?? $"Môn học {subjectId}",
             EmbeddingModels = _embeddingModelRegistry.GetAvailableModels(benchmarkOnly: true)
                 .Select(embeddingModel => new RagasEmbeddingModelOption
                 {
@@ -36,6 +37,15 @@ public sealed class QuestionsModel : AppPageModel
                     IsSelected = embeddingModel.Enabled
                 })
                 .ToList(),
+            Readiness = new BenchmarkReadinessViewModel
+            {
+                IsReady = readiness.IsReady,
+                TotalQuestions = readiness.TotalQuestions,
+                ReadyQuestions = readiness.ReadyQuestions,
+                AnswerableQuestions = readiness.AnswerableQuestions,
+                UnanswerableQuestions = readiness.UnanswerableQuestions,
+                Errors = readiness.Errors.ToList()
+            },
             ChunkingStrategies = _evaluationService.GetChunkingStrategies()
                 .Select(strategy => new RagasChunkingStrategyOption
                 {
@@ -50,6 +60,9 @@ public sealed class QuestionsModel : AppPageModel
                 Id = question.Id,
                 Question = question.Question,
                 GroundTruthAnswer = question.GroundTruthAnswer,
+                IsAnswerable = question.IsAnswerable,
+                IsBenchmarkReady = question.IsBenchmarkReady,
+                GoldChunkCount = question.GoldChunkCount,
                 CreatedByName = question.CreatedByName,
                 CreatedAt = question.CreatedAt
             }).ToList()

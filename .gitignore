@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # file uploaded
 Uploads
+
+# Python virtual environment
+python_services/.venv/

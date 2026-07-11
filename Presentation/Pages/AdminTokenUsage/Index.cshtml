@@ -1,24 +1,150 @@
 @page "/AdminTokenUsage/Index"
+@using System.Globalization
 @model Presentation.Pages.AdminTokenUsage.IndexModel
 
 @{
     ViewData["Title"] = "Thống kê token";
+    var embeddingPeriods = new[]
+    {
+        new { Key = "today", Label = "Hôm nay", Items = Model.ViewModel.EmbeddingUsage.Today },
+        new { Key = "week", Label = "Tuần này", Items = Model.ViewModel.EmbeddingUsage.ThisWeek },
+        new { Key = "month", Label = "Tháng này", Items = Model.ViewModel.EmbeddingUsage.ThisMonth }
+    };
+
+    var dailyChart = Model.ViewModel.DailyEmbeddingUsage;
+    var chartWidth = 980;
+    var chartHeight = 340;
+    var paddingLeft = 64;
+    var paddingRight = 28;
+    var paddingTop = 24;
+    var paddingBottom = 56;
+    var plotWidth = chartWidth - paddingLeft - paddingRight;
+    var plotHeight = chartHeight - paddingTop - paddingBottom;
+    var maxDailyTokens = Math.Max(1, dailyChart.MaxTokenCount);
+    var xStep = dailyChart.Labels.Count > 1 ? plotWidth / (double)(dailyChart.Labels.Count - 1) : plotWidth;
+    var labelEvery = dailyChart.Labels.Count > 20 ? 3 : dailyChart.Labels.Count > 12 ? 2 : 1;
+    var yTicks = Enumerable.Range(0, 5)
+        .Select(index => (int)Math.Round(maxDailyTokens * index / 4d))
+        .Distinct()
+        .ToList();
 }
 
 <style>
-    .role-badge {
+
+    .embedding-token-chart {
+        min-height: 180px;
+    }
+
+    .embedding-token-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 240px) minmax(160px, 1fr) minmax(96px, auto);
+        align-items: center;
+        gap: 1rem;
+        padding: 0.8rem 0;
+        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    .embedding-token-row:last-child {
+        border-bottom: 0;
+    }
+
+    .embedding-token-label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        min-width: 0;
+    }
+
+    .embedding-token-track {
+        height: 18px;
+        overflow: hidden;
+        background: #eef2f7;
+        border-radius: 999px;
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+    }
+
+    .embedding-token-bar {
+        height: 100%;
+        min-width: 4px;
+        background: linear-gradient(90deg, #0ea5e9, #2563eb);
+        border-radius: inherit;
+        transition: width 180ms ease;
+    }
+
+    .embedding-token-value {
+        font-weight: 700;
+        color: #0f172a;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .token-line-chart-wrap {
+        overflow-x: auto;
+    }
+
+    .token-line-chart {
+        min-width: 760px;
+        width: 100%;
+        height: auto;
+    }
+
+    .chart-grid-line {
+        stroke: #e5e7eb;
+        stroke-width: 1;
+    }
+
+    .chart-axis-line {
+        stroke: #94a3b8;
+        stroke-width: 1.2;
+    }
+
+    .chart-axis-label {
+        fill: #64748b;
+        font-size: 12px;
+    }
+
+    .chart-line {
+        fill: none;
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .chart-point {
+        stroke: #ffffff;
+        stroke-width: 1.6;
+    }
+
+    .chart-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+    }
+
+    .chart-legend-item {
         display: inline-flex;
         align-items: center;
-        min-width: 72px;
-        justify-content: center;
-        padding: 0.35rem 0.65rem;
+        gap: 0.45rem;
+        font-weight: 600;
+        color: #334155;
+    }
+
+    .chart-legend-swatch {
+        width: 0.85rem;
+        height: 0.85rem;
         border-radius: 999px;
-        background: #eef2ff;
-        border: 1px solid #c7d2fe;
-        color: #312e81;
-        font-weight: 700;
-        font-size: 0.78rem;
-        line-height: 1;
+        display: inline-block;
+    }
+
+    @@media (max-width: 768px) {
+        .embedding-token-row {
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+        }
+
+        .embedding-token-value {
+            text-align: left;
+        }
     }
 </style>
 
@@ -28,10 +154,16 @@
             <h1 class="h3 mb-1">Thống kê token</h1>
             <p class="text-muted mb-0">Tổng hợp lượng token người dùng đã sử dụng trong Gia sư AI.</p>
         </div>
-        <a class="btn btn-outline-secondary" asp-page="/AdminDashboard/Index">
-            <span class="material-symbols-outlined align-middle me-1" style="font-size:1.1rem">insert_chart</span>
-            Dashboard
-        </a>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary" asp-page="/AdminTokenUsage/Users">
+                <span class="material-symbols-outlined align-middle me-1" style="font-size:1.1rem">group</span>
+                Theo user
+            </a>
+            <a class="btn btn-outline-secondary" asp-page="/AdminDashboard/Index">
+                <span class="material-symbols-outlined align-middle me-1" style="font-size:1.1rem">insert_chart</span>
+                Dashboard
+            </a>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">
@@ -61,50 +193,163 @@
         </div>
     </div>
 
-    <div class="border rounded-3 bg-white overflow-hidden">
-        <div class="px-4 py-3 border-bottom">
-            <h2 class="h5 mb-0">Token theo từng user</h2>
+    <div class="border rounded-3 bg-white p-4 mb-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <h2 class="h5 mb-1">Token embedding theo model</h2>
+                <p class="text-muted mb-0">Tổng token embedding toàn hệ thống theo từng khoảng thời gian.</p>
+            </div>
+            <div class="btn-group" role="group" aria-label="Chọn khoảng thời gian thống kê embedding token">
+                @foreach (var period in embeddingPeriods)
+                {
+                    <button type="button"
+                            class="btn @(period.Key == "today" ? "btn-primary" : "btn-outline-primary")"
+                            data-embedding-period="@period.Key">
+                        @period.Label
+                    </button>
+                }
+            </div>
         </div>
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Người dùng</th>
-                        <th>Vai trò</th>
-                        <th class="text-end">Input</th>
-                        <th class="text-end">Output</th>
-                        <th class="text-end">Tổng token</th>
-                        <th class="text-end">Câu trả lời</th>
-                        <th>Lần dùng gần nhất</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (Model.ViewModel.Users.Any())
+
+        <div class="embedding-token-chart">
+            @foreach (var period in embeddingPeriods)
+            {
+                var maxTokens = Math.Max(1, period.Items.Count == 0 ? 1 : period.Items.Max(item => item.TokenCount));
+                <div class="embedding-token-panel @(period.Key == "today" ? string.Empty : "d-none")" data-embedding-period-panel="@period.Key">
+                    @if (period.Items.Count == 0)
                     {
-                        foreach (var user in Model.ViewModel.Users)
-                        {
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold">@user.FullName</div>
-                                    <div class="text-muted small">@user.Email</div>
-                                </td>
-                                <td><span class="role-badge">@user.Role</span></td>
-                                <td class="text-end">@user.PromptTokens.ToString("N0")</td>
-                                <td class="text-end">@user.CompletionTokens.ToString("N0")</td>
-                                <td class="text-end fw-semibold">@user.TotalTokens.ToString("N0")</td>
-                                <td class="text-end">@user.AnswerCount.ToString("N0")</td>
-                                <td>@(user.LastUsedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Chưa có dữ liệu")</td>
-                            </tr>
-                        }
+                        <div class="text-center text-muted py-5 border rounded-3 bg-light">
+                            <span class="material-symbols-outlined d-block mb-2" style="font-size:2rem">bar_chart</span>
+                            Chưa có dữ liệu embedding token trong khoảng thời gian này.
+                        </div>
                     }
                     else
                     {
-                        <tr>
-                            <td colspan="7" class="text-center text-muted py-4">Chưa có dữ liệu token.</td>
-                        </tr>
+                        foreach (var item in period.Items)
+                        {
+                            var barWidth = Math.Max(4, (int)Math.Round(item.TokenCount * 100d / maxTokens));
+                            <div class="embedding-token-row">
+                                <div class="embedding-token-label">
+                                    <span class="fw-semibold">@item.EmbeddingModel</span>
+                                    <span class="text-muted small">@item.EmbeddingCount.ToString("N0") lượt embedding</span>
+                                </div>
+                                <div class="embedding-token-track" aria-hidden="true">
+                                    <div class="embedding-token-bar" style="width:@barWidth%"></div>
+                                </div>
+                                <div class="embedding-token-value">@item.TokenCount.ToString("N0")</div>
+                            </div>
+                        }
                     }
-                </tbody>
-            </table>
+                </div>
+            }
         </div>
     </div>
+
+    <div class="border rounded-3 bg-white p-4 mb-4">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+            <div>
+                <h2 class="h5 mb-1">Token embedding theo ngày trong tháng</h2>
+                <p class="text-muted mb-0">Mỗi đường thể hiện token embedding của một model trong tháng hiện tại.</p>
+            </div>
+            @if (dailyChart.Series.Count > 0 && dailyChart.MaxTokenCount > 0)
+            {
+                <div class="chart-legend">
+                    @foreach (var series in dailyChart.Series)
+                    {
+                        <span class="chart-legend-item">
+                            <span class="chart-legend-swatch" style="background:@series.Color"></span>
+                            @series.EmbeddingModel
+                        </span>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (dailyChart.Series.Count == 0 || dailyChart.MaxTokenCount <= 0)
+        {
+            <div class="text-center text-muted py-5 border rounded-3 bg-light">
+                <span class="material-symbols-outlined d-block mb-2" style="font-size:2rem">show_chart</span>
+                Chưa có dữ liệu.
+            </div>
+        }
+        else
+        {
+            <div class="token-line-chart-wrap">
+                <svg class="token-line-chart" viewBox="0 0 @chartWidth @chartHeight" role="img" aria-label="Biểu đồ token embedding theo ngày trong tháng">
+                    @foreach (var tick in yTicks)
+                    {
+                        var y = paddingTop + plotHeight - (tick * plotHeight / (double)maxDailyTokens);
+                        <line class="chart-grid-line" x1="@paddingLeft" y1="@y.ToString("0.##", CultureInfo.InvariantCulture)" x2="@(chartWidth - paddingRight)" y2="@y.ToString("0.##", CultureInfo.InvariantCulture)" />
+                        @Html.Raw($"<text class=\"chart-axis-label\" x=\"{paddingLeft - 10}\" y=\"{(y + 4).ToString("0.##", CultureInfo.InvariantCulture)}\" text-anchor=\"end\">{tick.ToString("N0")}</text>")
+                    }
+
+                    <line class="chart-axis-line" x1="@paddingLeft" y1="@paddingTop" x2="@paddingLeft" y2="@(paddingTop + plotHeight)" />
+                    <line class="chart-axis-line" x1="@paddingLeft" y1="@(paddingTop + plotHeight)" x2="@(chartWidth - paddingRight)" y2="@(paddingTop + plotHeight)" />
+
+                    @for (var index = 0; index < dailyChart.Labels.Count; index++)
+                    {
+                        if (index % labelEvery == 0 || index == dailyChart.Labels.Count - 1)
+                        {
+                            var x = paddingLeft + index * xStep;
+                            @Html.Raw($"<text class=\"chart-axis-label\" x=\"{x.ToString("0.##", CultureInfo.InvariantCulture)}\" y=\"{chartHeight - 24}\" text-anchor=\"middle\">{dailyChart.Labels[index]}</text>")
+                        }
+                    }
+
+                    @foreach (var series in dailyChart.Series)
+                    {
+                        var points = new List<string>();
+                        for (var index = 0; index < series.Values.Count; index++)
+                        {
+                            var x = paddingLeft + index * xStep;
+                            var y = paddingTop + plotHeight - (series.Values[index] * plotHeight / (double)maxDailyTokens);
+                            points.Add($"{x.ToString("0.##", CultureInfo.InvariantCulture)},{y.ToString("0.##", CultureInfo.InvariantCulture)}");
+                        }
+
+                        var pointText = string.Join(" ", points);
+                        <polyline class="chart-line" points="@pointText" stroke="@series.Color" />
+
+                        for (var index = 0; index < series.Values.Count; index++)
+                        {
+                            if (series.Values[index] <= 0)
+                            {
+                                continue;
+                            }
+
+                            var x = paddingLeft + index * xStep;
+                            var y = paddingTop + plotHeight - (series.Values[index] * plotHeight / (double)maxDailyTokens);
+                            <circle class="chart-point" cx="@x.ToString("0.##", CultureInfo.InvariantCulture)" cy="@y.ToString("0.##", CultureInfo.InvariantCulture)" r="3.5" fill="@series.Color">
+                                <title>@series.EmbeddingModel - @dailyChart.Labels[index]: @series.Values[index].ToString("N0") token</title>
+                            </circle>
+                        }
+                    }
+                </svg>
+            </div>
+        }
+    </div>
+
 </div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const buttons = Array.from(document.querySelectorAll('[data-embedding-period]'));
+            const panels = Array.from(document.querySelectorAll('[data-embedding-period-panel]'));
+
+            buttons.forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const period = button.dataset.embeddingPeriod;
+
+                    buttons.forEach(function (item) {
+                        const active = item === button;
+                        item.classList.toggle('btn-primary', active);
+                        item.classList.toggle('btn-outline-primary', !active);
+                    });
+
+                    panels.forEach(function (panel) {
+                        panel.classList.toggle('d-none', panel.dataset.embeddingPeriodPanel !== period);
+                    });
+                });
+            });
+        });
+    </script>
+}

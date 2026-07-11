@@ -69,7 +69,7 @@ public sealed class ChatbotService : IChatbotService
                 },
                 cancellationToken);
 
-            var embeddingService = _embeddingModelRegistry.GetDefault();
+            var embeddingService = await _embeddingModelRegistry.GetConfiguredDefaultAsync(cancellationToken);
             await _embeddingBackfillService.BackfillSubjectAsync(
                 request.SubjectId,
                 embeddingService.ModelKey,

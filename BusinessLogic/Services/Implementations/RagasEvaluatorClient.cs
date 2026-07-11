@@ -40,10 +40,8 @@ public sealed class RagasEvaluatorClient : IRagasEvaluatorClient
 
         return payload?.Results?
             .Select(result => new RagasEvaluationScore(
-                result.Faithfulness,
-                result.AnswerRelevancy,
-                result.ContextPrecision,
-                result.ContextRecall))
+                result.AnswerCorrectness,
+                result.Faithfulness))
             .ToList() ?? [];
     }
 
@@ -60,8 +58,6 @@ public sealed class RagasEvaluatorClient : IRagasEvaluatorClient
         [property: JsonPropertyName("results")] IReadOnlyList<RagasEvaluateResult>? Results);
 
     private sealed record RagasEvaluateResult(
-        [property: JsonPropertyName("faithfulness")] decimal Faithfulness,
-        [property: JsonPropertyName("answerRelevancy")] decimal AnswerRelevancy,
-        [property: JsonPropertyName("contextPrecision")] decimal ContextPrecision,
-        [property: JsonPropertyName("contextRecall")] decimal ContextRecall);
+        [property: JsonPropertyName("answerCorrectness")] decimal AnswerCorrectness,
+        [property: JsonPropertyName("faithfulness")] decimal Faithfulness);
 }

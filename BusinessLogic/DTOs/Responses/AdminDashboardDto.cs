@@ -32,5 +32,5 @@ public sealed record RecentBenchmarkDto(
     string SubjectName,
     string EmbeddingModel,
     string? LlmModel,
-    decimal? OverallScore,
+    decimal? RecallAt5,
     DateTime CreatedAt);

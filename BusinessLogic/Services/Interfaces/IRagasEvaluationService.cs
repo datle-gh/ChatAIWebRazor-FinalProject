@@ -1,3 +1,4 @@
+using BusinessLogic.DTOs.Requests;
 using BusinessLogic.DTOs.Responses;
 
 namespace BusinessLogic.Services.Interfaces;
@@ -11,9 +12,26 @@ public interface IRagasEvaluationService
         int subjectId,
         CancellationToken cancellationToken = default);
 
+    Task<EvaluationQuestionSetupDto?> GetQuestionSetupAsync(
+        int questionId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<BenchmarkChunkCandidateDto>> SuggestGoldChunksAsync(
+        int questionId,
+        string? searchTerm = null,
+        CancellationToken cancellationToken = default);
+
+    Task<OperationResult> SaveQuestionBenchmarkSetupAsync(
+        SaveQuestionBenchmarkSetupRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<BenchmarkReadinessDto> GetBenchmarkReadinessAsync(
+        int subjectId,
+        CancellationToken cancellationToken = default);
+
     IReadOnlyList<BenchmarkChunkingStrategyDto> GetChunkingStrategies();
 
-    Task<OperationResult> AddQuestionAsync(
+    Task<CreateEvaluationQuestionResult> AddQuestionAsync(
         int subjectId,
         string question,
         string groundTruthAnswer,
@@ -39,9 +57,21 @@ public interface IRagasEvaluationService
         int subjectId,
         IReadOnlyList<string>? embeddingModels = null,
         IReadOnlyList<string>? chunkingStrategies = null,
+        RagasEvaluationProgressContext? progressContext = null,
         CancellationToken cancellationToken = default);
 
     Task<RagasRunSummaryDto?> GetLatestRunAsync(
         int subjectId,
+        CancellationToken cancellationToken = default);
+
+    Task<RagasRunSummaryDto?> GetRunAsync(
+        int subjectId,
+        string runId,
+        CancellationToken cancellationToken = default);
+
+    Task<RagasRunHistoryDto?> GetRunHistoryAsync(
+        int subjectId,
+        int pageNumber,
+        int pageSize,
         CancellationToken cancellationToken = default);
 }

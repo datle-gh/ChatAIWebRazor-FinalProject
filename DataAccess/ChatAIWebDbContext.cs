@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using BusinessObject.Entities;
 using BusinessObject.Enums;
@@ -32,6 +32,8 @@ public partial class ChatAIWebDbContext : DbContext
     public virtual DbSet<DocumentConflictReview> DocumentConflictReviews { get; set; }
 
     public virtual DbSet<EvaluationQuestion> EvaluationQuestions { get; set; }
+
+    public virtual DbSet<EvaluationQuestionGoldChunk> EvaluationQuestionGoldChunks { get; set; }
 
     public virtual DbSet<Notification> Notifications { get; set; }
 
@@ -284,6 +286,7 @@ public partial class ChatAIWebDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
                 .HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsAnswerable).HasDefaultValue(true);
 
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.EvaluationQuestions).HasForeignKey(d => d.CreatedBy);
 
@@ -293,6 +296,28 @@ public partial class ChatAIWebDbContext : DbContext
                 .HasConstraintName("FK_EvaluationQuestions_Subjects");
         });
 
+        modelBuilder.Entity<EvaluationQuestionGoldChunk>(entity =>
+        {
+            entity.HasKey(e => new { e.EvaluationQuestionId, e.DocumentChunkId });
+
+            entity.HasIndex(e => e.DocumentChunkId, "IX_EvaluationQuestionGoldChunks_DocumentChunkId");
+
+            entity.Property(e => e.CreatedAt)
+                .HasPrecision(0)
+                .HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(e => e.EvaluationQuestion)
+                .WithMany(question => question.GoldChunks)
+                .HasForeignKey(e => e.EvaluationQuestionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_EvaluationQuestionGoldChunks_EvaluationQuestions");
+
+            entity.HasOne(e => e.DocumentChunk)
+                .WithMany(chunk => chunk.EvaluationQuestionGoldChunks)
+                .HasForeignKey(e => e.DocumentChunkId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_EvaluationQuestionGoldChunks_DocumentChunks");
+        });
         modelBuilder.Entity<Notification>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK_Notifications");
@@ -324,17 +349,20 @@ public partial class ChatAIWebDbContext : DbContext
         {
             entity.HasKey(e => e.Id).HasName("PK__RagasBen__3214EC0770165910");
 
-            entity.Property(e => e.AnswerRelevancy).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.AnswerCorrectness).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.ChunkingStrategy).HasMaxLength(100);
-            entity.Property(e => e.ContextPrecision).HasColumnType("decimal(9, 6)");
-            entity.Property(e => e.ContextRecall).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.CitationF1).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.CitationPrecision).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.CitationRecall).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
                 .HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.EmbeddingModel).HasMaxLength(100);
             entity.Property(e => e.Faithfulness).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.LlmModel).HasMaxLength(100);
-            entity.Property(e => e.OverallScore).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.MrrAt10).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.NdcgAt5).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.RecallAt5).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.RunId).HasMaxLength(50);
             entity.Property(e => e.VectorStore).HasMaxLength(50);
 

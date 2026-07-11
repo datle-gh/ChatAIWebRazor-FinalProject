@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace BusinessObject.Entities;
@@ -34,6 +34,8 @@ public partial class DocumentChunk
     public virtual ICollection<DocumentConflictFinding> ConflictFindingsAsNewChunk { get; set; } = new List<DocumentConflictFinding>();
 
     public virtual ICollection<DocumentChunkEmbedding> DocumentChunkEmbeddings { get; set; } = new List<DocumentChunkEmbedding>();
+
+    public virtual ICollection<EvaluationQuestionGoldChunk> EvaluationQuestionGoldChunks { get; set; } = new List<EvaluationQuestionGoldChunk>();
 
     public virtual Document Document { get; set; } = null!;
 }

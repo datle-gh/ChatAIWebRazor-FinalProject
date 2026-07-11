@@ -14,10 +14,5 @@ public sealed record RagasEvaluationSample(
     IReadOnlyList<string> RetrievedContexts);
 
 public sealed record RagasEvaluationScore(
-    decimal Faithfulness,
-    decimal AnswerRelevancy,
-    decimal ContextPrecision,
-    decimal ContextRecall)
-{
-    public decimal OverallScore => (Faithfulness + AnswerRelevancy + ContextPrecision + ContextRecall) / 4.0m;
-}
+    decimal AnswerCorrectness,
+    decimal Faithfulness);

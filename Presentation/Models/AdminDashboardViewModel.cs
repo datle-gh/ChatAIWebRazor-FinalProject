@@ -37,6 +37,6 @@ public sealed class RecentBenchmarkItem
     public string SubjectName { get; set; } = string.Empty;
     public string EmbeddingModel { get; set; } = string.Empty;
     public string? LlmModel { get; set; }
-    public decimal? OverallScore { get; set; }
+    public decimal? RecallAt5 { get; set; }
     public DateTime CreatedAt { get; set; }
 }

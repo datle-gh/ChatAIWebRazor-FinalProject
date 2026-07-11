@@ -20,10 +20,8 @@ class EvaluationRequest(BaseModel):
 
 
 class EvaluationScore(BaseModel):
+    answerCorrectness: float
     faithfulness: float
-    answerRelevancy: float
-    contextPrecision: float
-    contextRecall: float
 
 
 class EvaluationResponse(BaseModel):
@@ -45,7 +43,7 @@ async def evaluate(request: EvaluationRequest):
 
 async def evaluate_with_ragas(samples: List[EvaluationSample]) -> List[EvaluationScore]:
     from ragas import EvaluationDataset, evaluate as ragas_evaluate
-    from ragas.metrics import Faithfulness, LLMContextPrecisionWithReference, LLMContextRecall, ResponseRelevancy
+    from ragas.metrics import AnswerCorrectness, Faithfulness
     from ragas.llms import llm_factory
 
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -69,10 +67,8 @@ async def evaluate_with_ragas(samples: List[EvaluationSample]) -> List[Evaluatio
     result = ragas_evaluate(
         dataset=dataset,
         metrics=[
+            AnswerCorrectness(llm=llm, weights=[1.0, 0.0]),
             Faithfulness(llm=llm),
-            ResponseRelevancy(llm=llm),
-            LLMContextPrecisionWithReference(llm=llm),
-            LLMContextRecall(llm=llm),
         ],
     )
 
@@ -80,10 +76,8 @@ async def evaluate_with_ragas(samples: List[EvaluationSample]) -> List[Evaluatio
     scores: List[EvaluationScore] = []
     for row in rows:
         scores.append(EvaluationScore(
+            answerCorrectness=float(row.get("answer_correctness", 0.0) or 0.0),
             faithfulness=float(row.get("faithfulness", 0.0) or 0.0),
-            answerRelevancy=float(row.get("answer_relevancy", row.get("response_relevancy", 0.0)) or 0.0),
-            contextPrecision=float(row.get("llm_context_precision_with_reference", row.get("context_precision", 0.0)) or 0.0),
-            contextRecall=float(row.get("context_recall", row.get("llm_context_recall", 0.0)) or 0.0),
         ))
 
     return scores

@@ -17,86 +17,54 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
         IEnumerable<int> evaluationQuestionIds,
         CancellationToken cancellationToken = default)
     {
-        var ids = evaluationQuestionIds.ToList();
+        var ids = evaluationQuestionIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
 
-        return await _context.RagasBenchmarkResults
-            .AsNoTracking()
-            .Where(r => ids.Contains(r.EvaluationQuestionId))
-            .OrderByDescending(r => r.CreatedAt)
-            .Select(r => new RagasBenchmarkResult
-            {
-                Id = r.Id,
-                EvaluationQuestionId = r.EvaluationQuestionId,
-                RunId = string.Empty,
-                EmbeddingModel = r.EmbeddingModel,
-                LlmModel = r.LlmModel,
-                VectorStore = null,
-                ChunkingStrategy = r.ChunkingStrategy,
-                GeneratedAnswer = r.GeneratedAnswer,
-                RetrievedContextsJson = null,
-                Faithfulness = r.Faithfulness,
-                AnswerRelevancy = r.AnswerRelevancy,
-                ContextPrecision = r.ContextPrecision,
-                ContextRecall = r.ContextRecall,
-                OverallScore = r.OverallScore,
-                CreatedAt = r.CreatedAt
-            })
+        return await CreateReadQuery()
+            .Where(result => ids.Contains(result.EvaluationQuestionId))
+            .OrderByDescending(result => result.CreatedAt)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task AddRangeAsync(IEnumerable<RagasBenchmarkResult> results, CancellationToken cancellationToken = default)
+    public async Task AddRangeAsync(
+        IEnumerable<RagasBenchmarkResult> results,
+        CancellationToken cancellationToken = default)
     {
         await _context.RagasBenchmarkResults.AddRangeAsync(results, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<int> CountBySubjectAsync(int subjectId, CancellationToken cancellationToken = default)
+    public Task<int> CountBySubjectAsync(
+        int subjectId,
+        CancellationToken cancellationToken = default)
     {
-        if (await HasPhase2BenchmarkColumnsAsync(cancellationToken))
-        {
-            return await _context.RagasBenchmarkResults
-                .AsNoTracking()
-                .Where(r => r.EvaluationQuestion.SubjectId == subjectId)
-                .Select(r => r.RunId)
-                .Distinct()
-                .CountAsync(cancellationToken);
-        }
-
-        return await _context.RagasBenchmarkResults
-            .CountAsync(r => r.EvaluationQuestion.SubjectId == subjectId, cancellationToken);
+        return _context.RagasBenchmarkResults
+            .AsNoTracking()
+            .Where(result => result.EvaluationQuestion.SubjectId == subjectId)
+            .Select(result => result.RunId)
+            .Distinct()
+            .CountAsync(cancellationToken);
     }
 
     public Task<int> GetTotalAsync(CancellationToken cancellationToken = default)
     {
         return _context.RagasBenchmarkResults
             .AsNoTracking()
+            .Select(result => result.RunId)
+            .Distinct()
             .CountAsync(cancellationToken);
     }
 
-    public async Task<RagasBenchmarkResult?> GetLatestBySubjectAsync(int subjectId, CancellationToken cancellationToken = default)
+    public Task<RagasBenchmarkResult?> GetLatestBySubjectAsync(
+        int subjectId,
+        CancellationToken cancellationToken = default)
     {
-        return await _context.RagasBenchmarkResults
-            .AsNoTracking()
-            .Where(r => r.EvaluationQuestion.SubjectId == subjectId)
-            .OrderByDescending(r => r.CreatedAt)
-            .Select(r => new RagasBenchmarkResult
-            {
-                Id = r.Id,
-                EvaluationQuestionId = r.EvaluationQuestionId,
-                RunId = string.Empty,
-                EmbeddingModel = r.EmbeddingModel,
-                LlmModel = r.LlmModel,
-                VectorStore = null,
-                ChunkingStrategy = r.ChunkingStrategy,
-                GeneratedAnswer = r.GeneratedAnswer,
-                RetrievedContextsJson = null,
-                Faithfulness = r.Faithfulness,
-                AnswerRelevancy = r.AnswerRelevancy,
-                ContextPrecision = r.ContextPrecision,
-                ContextRecall = r.ContextRecall,
-                OverallScore = r.OverallScore,
-                CreatedAt = r.CreatedAt
-            })
+        return CreateReadQuery()
+            .Where(result => result.EvaluationQuestion.SubjectId == subjectId)
+            .OrderByDescending(result => result.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -104,58 +72,110 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
         int subjectId,
         CancellationToken cancellationToken = default)
     {
-        var hasPhase2Columns = await HasPhase2BenchmarkColumnsAsync(cancellationToken);
-        var latest = hasPhase2Columns
-            ? await _context.RagasBenchmarkResults
-                .AsNoTracking()
-                .Where(r => r.EvaluationQuestion.SubjectId == subjectId)
-                .OrderByDescending(r => r.CreatedAt)
-                .FirstOrDefaultAsync(cancellationToken)
-            : await GetLatestBySubjectAsync(subjectId, cancellationToken);
+        var runId = await _context.RagasBenchmarkResults
+            .AsNoTracking()
+            .Where(result => result.EvaluationQuestion.SubjectId == subjectId)
+            .OrderByDescending(result => result.CreatedAt)
+            .Select(result => result.RunId)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (latest is null)
+        return string.IsNullOrWhiteSpace(runId)
+            ? []
+            : await GetRunBySubjectAsync(subjectId, runId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RagasBenchmarkResult>> GetRunBySubjectAsync(
+        int subjectId,
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
         {
             return [];
         }
 
-        if (!hasPhase2Columns)
-        {
-            return await _context.RagasBenchmarkResults
-                .AsNoTracking()
-                .Where(r =>
-                    r.EvaluationQuestion.SubjectId == subjectId
-                    && Math.Abs(EF.Functions.DateDiffSecond(r.CreatedAt, latest.CreatedAt)) < 60)
-                .OrderBy(r => r.EmbeddingModel)
-                .ThenBy(r => r.EvaluationQuestionId)
-                .Select(r => new RagasBenchmarkResult
-                {
-                    Id = r.Id,
-                    EvaluationQuestionId = r.EvaluationQuestionId,
-                    RunId = string.Empty,
-                    EmbeddingModel = r.EmbeddingModel,
-                    LlmModel = r.LlmModel,
-                    VectorStore = null,
-                    ChunkingStrategy = r.ChunkingStrategy,
-                    GeneratedAnswer = r.GeneratedAnswer,
-                    RetrievedContextsJson = null,
-                    Faithfulness = r.Faithfulness,
-                    AnswerRelevancy = r.AnswerRelevancy,
-                    ContextPrecision = r.ContextPrecision,
-                    ContextRecall = r.ContextRecall,
-                    OverallScore = r.OverallScore,
-                    CreatedAt = r.CreatedAt
-                })
-                .ToListAsync(cancellationToken);
-        }
-
-        return await _context.RagasBenchmarkResults
-            .AsNoTracking()
-            .Where(r =>
-                r.EvaluationQuestion.SubjectId == subjectId
-                && r.RunId == latest.RunId)
-            .OrderBy(r => r.EmbeddingModel)
-            .ThenBy(r => r.EvaluationQuestionId)
+        return await CreateReadQuery()
+            .Where(result =>
+                result.EvaluationQuestion.SubjectId == subjectId
+                && result.RunId == runId)
+            .OrderBy(result => result.EmbeddingModel)
+            .ThenBy(result => result.ChunkingStrategy)
+            .ThenBy(result => result.EvaluationQuestionId)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<RagasBenchmarkRunPage> GetRunHistoryBySubjectAsync(
+        int subjectId,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        pageNumber = Math.Max(1, pageNumber);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _context.RagasBenchmarkResults
+            .AsNoTracking()
+            .Where(result => result.EvaluationQuestion.SubjectId == subjectId);
+
+        var totalCount = await query
+            .Select(result => result.RunId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+        var runRows = await query
+            .GroupBy(result => result.RunId)
+            .Select(group => new
+            {
+                RunId = group.Key,
+                RunDate = group.Max(result => result.CreatedAt),
+                QuestionCount = group
+                    .Select(result => result.EvaluationQuestionId)
+                    .Distinct()
+                    .Count(),
+                AvgRecallAt5 = group
+                    .Where(result => !result.ExpectedNoAnswer)
+                    .Average(result => result.RecallAt5 ?? 0)
+            })
+            .OrderByDescending(run => run.RunDate)
+            .ThenByDescending(run => run.RunId)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var runIds = runRows.Select(run => run.RunId).ToList();
+        var metadata = runIds.Count == 0
+            ? []
+            : await query
+                .Where(result => runIds.Contains(result.RunId))
+                .Select(result => new
+                {
+                    result.RunId,
+                    result.EmbeddingModel,
+                    result.ChunkingStrategy
+                })
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+        var items = runRows.Select(run => new RagasBenchmarkRunAggregate(
+            run.RunId,
+            run.RunDate,
+            metadata
+                .Where(item => item.RunId == run.RunId)
+                .Select(item => item.EmbeddingModel)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(model => model)
+                .ToList(),
+            metadata
+                .Where(item => item.RunId == run.RunId)
+                .Select(item => item.ChunkingStrategy)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(strategy => strategy)
+                .ToList(),
+            run.QuestionCount,
+            run.AvgRecallAt5))
+            .ToList();
+
+        return new RagasBenchmarkRunPage(items, totalCount);
     }
 
     public async Task<IReadOnlyList<RagasBenchmarkResult>> GetBySubjectSinceAsync(
@@ -163,15 +183,11 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
         DateTime sinceUtc,
         CancellationToken cancellationToken = default)
     {
-        return await _context.RagasBenchmarkResults
-            .AsNoTracking()
-            .Include(result => result.EvaluationQuestion)
+        return await CreateReadQuery()
             .Where(result =>
                 result.EvaluationQuestion.SubjectId == subjectId
                 && result.CreatedAt >= sinceUtc)
             .OrderByDescending(result => result.CreatedAt)
-            .ThenBy(result => result.EmbeddingModel)
-            .ThenBy(result => result.EvaluationQuestionId)
             .ToListAsync(cancellationToken);
     }
 
@@ -179,27 +195,17 @@ public sealed class RagasBenchmarkResultRepository : IRagasBenchmarkResultReposi
         int count,
         CancellationToken cancellationToken = default)
     {
-        return await _context.RagasBenchmarkResults
-            .AsNoTracking()
-            .Include(result => result.EvaluationQuestion)
-                .ThenInclude(question => question.Subject)
+        return await CreateReadQuery()
             .OrderByDescending(result => result.CreatedAt)
-            .Take(count)
+            .Take(Math.Clamp(count, 1, 100))
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<bool> HasPhase2BenchmarkColumnsAsync(CancellationToken cancellationToken)
+    private IQueryable<RagasBenchmarkResult> CreateReadQuery()
     {
-        var connection = _context.Database.GetDbConnection();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT CASE WHEN COL_LENGTH('dbo.RagasBenchmarkResults', 'RunId') IS NULL THEN 0 ELSE 1 END";
-
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            await connection.OpenAsync(cancellationToken);
-        }
-
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result) == 1;
+        return _context.RagasBenchmarkResults
+            .AsNoTracking()
+            .Include(result => result.EvaluationQuestion)
+                .ThenInclude(question => question.Subject);
     }
 }

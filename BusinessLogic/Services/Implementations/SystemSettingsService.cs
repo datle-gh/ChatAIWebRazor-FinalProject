@@ -74,6 +74,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
     {
         var settings = new SystemSettingsDto
         {
+            EmbeddingProvider = ReadString("Embedding:Provider", "Ollama"),
+            EmbeddingModel = ReadString("Embedding:DefaultModelKey", ReadString("Embedding:DefaultModel", "bge-m3")),
             TopK = ReadInt("RagSettings:TopK", 5),
             SimilarityThreshold = ReadDecimal("RagSettings:SimilarityThreshold", 0.7m),
             MaxCitationSnippetLength = ReadInt("RagSettings:MaxCitationSnippetLength", 250),
@@ -110,6 +112,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     private static SystemSettingsDto NormalizeSettings(SystemSettingsDto settings)
     {
+        settings.EmbeddingProvider = string.IsNullOrWhiteSpace(settings.EmbeddingProvider) ? "Ollama" : settings.EmbeddingProvider.Trim();
+        settings.EmbeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModel) ? "bge-m3" : settings.EmbeddingModel.Trim();
         settings.ChunkSizeMode = NormalizeChunkSizeMode(settings.ChunkSizeMode);
         settings.PageChunkSize = Math.Clamp(settings.PageChunkSize, 1, 20);
         settings.WordChunkSize = Math.Clamp(settings.WordChunkSize, 50, 3000);
@@ -132,59 +136,5 @@ public sealed class SystemSettingsService : ISystemSettingsService
         }
 
         return "Word";
-    }
-
-    public async Task<(bool Success, string Message)> TestConnectionAsync(
-        string provider,
-        string apiKey,
-        string model,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            return (false, "Vui lòng nhập API Key.");
-        }
-
-        try
-        {
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-
-            if (provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
-            {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}?key={apiKey}";
-                var response = await httpClient.GetAsync(url, cancellationToken);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    return (true, "Kết nối Gemini API thành công!");
-                }
-
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                return (false, $"Lỗi Gemini API: {response.StatusCode}. {body}");
-            }
-
-            if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                var request = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
-                request.Headers.Add("Authorization", $"Bearer {apiKey}");
-
-                var response = await httpClient.SendAsync(request, cancellationToken);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    return (true, "Kết nối OpenAI API thành công!");
-                }
-
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                return (false, $"Lỗi OpenAI API: {response.StatusCode}. {body}");
-            }
-
-            return (false, $"Provider '{provider}' không được hỗ trợ kiểm tra kết nối.");
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(exception, "Test connection failed for {Provider}", provider);
-            return (false, $"Không thể kết nối: {exception.Message}");
-        }
     }
 }

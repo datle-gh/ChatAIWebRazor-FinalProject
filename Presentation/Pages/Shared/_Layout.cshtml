@@ -157,6 +157,7 @@
                 @RenderBody()
             </main>
         </div>
+        @await Html.PartialAsync("/Pages/Shared/_RagasEvaluationProgressWidget.cshtml")
     }
     else
     {
@@ -170,6 +171,10 @@
     @if (isAuthenticated)
     {
         <script src="~/lib/signalr/signalr.min.js"></script>
+        @if (User.IsInRole("Admin"))
+        {
+            <script src="~/js/ragas-evaluation-jobs.js" asp-append-version="true"></script>
+        }
         <script>
             (() => {
                 const shell = document.querySelector('[data-notification-shell]');
@@ -255,4 +260,3 @@
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
-
