@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    ChatAIWeb Database Script
    Project: ASP.NET Razor + 3 Layers + RAG Chatbot
    Database: SQL Server
@@ -433,6 +433,7 @@ BEGIN
         SubjectId       INT NOT NULL,
         Question        NVARCHAR(MAX) NOT NULL,
         GroundTruthAnswer NVARCHAR(MAX) NOT NULL,
+        IsAnswerable    BIT NOT NULL CONSTRAINT DF_EvaluationQuestions_IsAnswerable DEFAULT 1,
         CreatedBy       INT NULL,
         CreatedAt       DATETIME2(0) NOT NULL CONSTRAINT DF_EvaluationQuestions_CreatedAt DEFAULT SYSUTCDATETIME(),
 
@@ -442,6 +443,29 @@ BEGIN
 END
 GO
 
+
+/* =========================================================
+   10.1 EvaluationQuestionGoldChunks
+   Human-reviewed relevance labels for retrieval benchmarks.
+   ========================================================= */
+IF OBJECT_ID(N'dbo.EvaluationQuestionGoldChunks', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.EvaluationQuestionGoldChunks
+    (
+        EvaluationQuestionId INT NOT NULL,
+        DocumentChunkId      INT NOT NULL,
+        RelevanceGrade       TINYINT NOT NULL,
+        CreatedAt            DATETIME2(0) NOT NULL CONSTRAINT DF_EvaluationQuestionGoldChunks_CreatedAt DEFAULT SYSUTCDATETIME(),
+
+        CONSTRAINT PK_EvaluationQuestionGoldChunks PRIMARY KEY (EvaluationQuestionId, DocumentChunkId),
+        CONSTRAINT CK_EvaluationQuestionGoldChunks_RelevanceGrade CHECK (RelevanceGrade IN (1, 2)),
+        CONSTRAINT FK_EvaluationQuestionGoldChunks_EvaluationQuestions
+            FOREIGN KEY (EvaluationQuestionId) REFERENCES dbo.EvaluationQuestions(Id) ON DELETE CASCADE,
+        CONSTRAINT FK_EvaluationQuestionGoldChunks_DocumentChunks
+            FOREIGN KEY (DocumentChunkId) REFERENCES dbo.DocumentChunks(Id) ON DELETE CASCADE
+    );
+END
+GO
 /* =========================================================
    11. RagasBenchmarkResults
    Stores RAGAS/benchmark results from experiments.
@@ -459,11 +483,22 @@ BEGIN
         ChunkingStrategy    NVARCHAR(100) NOT NULL,
         GeneratedAnswer     NVARCHAR(MAX) NULL,
         RetrievedContextsJson NVARCHAR(MAX) NULL,
+        RetrievedChunkIdsJson NVARCHAR(MAX) NULL,
+        CitationChunkIdsJson  NVARCHAR(MAX) NULL,
+        RecallAt5           DECIMAL(9,6) NULL,
+        MrrAt10             DECIMAL(9,6) NULL,
+        NdcgAt5             DECIMAL(9,6) NULL,
+        AnswerCorrectness   DECIMAL(9,6) NULL,
         Faithfulness        DECIMAL(9,6) NULL,
-        AnswerRelevancy     DECIMAL(9,6) NULL,
-        ContextPrecision    DECIMAL(9,6) NULL,
-        ContextRecall       DECIMAL(9,6) NULL,
-        OverallScore        DECIMAL(9,6) NULL,
+        CitationPrecision   DECIMAL(9,6) NULL,
+        CitationRecall      DECIMAL(9,6) NULL,
+        CitationF1          DECIMAL(9,6) NULL,
+        ExpectedNoAnswer    BIT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_ExpectedNoAnswer DEFAULT 0,
+        PredictedNoAnswer   BIT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_PredictedNoAnswer DEFAULT 0,
+        EmbeddingLatencyMs  BIGINT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_EmbeddingLatencyMs DEFAULT 0,
+        RetrievalLatencyMs  BIGINT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_RetrievalLatencyMs DEFAULT 0,
+        GenerationLatencyMs BIGINT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_GenerationLatencyMs DEFAULT 0,
+        EndToEndLatencyMs   BIGINT NOT NULL CONSTRAINT DF_RagasBenchmarkResults_EndToEndLatencyMs DEFAULT 0,
         CreatedAt           DATETIME2(0) NOT NULL CONSTRAINT DF_RagasBenchmarkResults_CreatedAt DEFAULT SYSUTCDATETIME(),
 
         CONSTRAINT FK_RagasBenchmarkResults_EvaluationQuestions FOREIGN KEY (EvaluationQuestionId) REFERENCES dbo.EvaluationQuestions(Id) ON DELETE CASCADE
@@ -479,6 +514,7 @@ CREATE INDEX IX_Documents_SubjectId ON dbo.Documents(SubjectId);
 CREATE INDEX IX_Documents_Status ON dbo.Documents(Status);
 CREATE INDEX IX_DocumentChunks_DocumentId ON dbo.DocumentChunks(DocumentId);
 CREATE INDEX IX_DocumentChunks_VectorId ON dbo.DocumentChunks(VectorId) WHERE VectorId IS NOT NULL;
+CREATE INDEX IX_EvaluationQuestionGoldChunks_DocumentChunkId ON dbo.EvaluationQuestionGoldChunks(DocumentChunkId);
 CREATE INDEX IX_DocumentChunkEmbeddings_DocumentChunkId ON dbo.DocumentChunkEmbeddings(DocumentChunkId);
 CREATE INDEX IX_DocumentChunkEmbeddings_VectorId ON dbo.DocumentChunkEmbeddings(VectorId) WHERE VectorId IS NOT NULL;
 CREATE INDEX IX_DocumentConflictReviews_NewDocumentId ON dbo.DocumentConflictReviews(NewDocumentId);
@@ -752,5 +788,314 @@ BEGIN
 END
 GO
 
+
+/* =========================================================
+   Seed: VNR202 benchmark questions and gold chunks
+   Source: curated 50-question ground-truth set for Lich su Dang.
+   ========================================================= */
+DECLARE @Vnr202SubjectId INT = (SELECT TOP (1) Id FROM dbo.Subjects WHERE SubjectCode = N'VNR202');
+DECLARE @Vnr202TeacherId INT = COALESCE(
+    (SELECT TOP (1) UserId FROM dbo.SubjectEnrollments WHERE SubjectId = @Vnr202SubjectId AND RoleInClass = N'Teacher' ORDER BY UserId),
+    (SELECT TOP (1) Id FROM dbo.Users WHERE Role = N'Teacher' ORDER BY Id),
+    (SELECT TOP (1) Id FROM dbo.Users ORDER BY Id)
+);
+
+IF @Vnr202SubjectId IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM dbo.Documents WHERE SubjectId = @Vnr202SubjectId AND StoredFileName = N'vnr202-lich-su-dang-benchmark-seed.pdf')
+    BEGIN
+        INSERT INTO dbo.Documents
+            (SubjectId, Title, OriginalFileName, StoredFileName, FilePath, FileType, FileSizeBytes, UploadedBy, Status, UploadedAt, IndexedAt)
+        VALUES
+            (@Vnr202SubjectId,
+             N'Lịch sử Đảng Cộng sản Việt Nam - benchmark seed',
+             N'VNR202_LichSuDang_Benchmark.pdf',
+             N'vnr202-lich-su-dang-benchmark-seed.pdf',
+             N'App_Data/SeedDocuments/VNR202_LichSuDang_Benchmark.pdf',
+             N'PDF',
+             0,
+             @Vnr202TeacherId,
+             N'Indexed',
+             SYSUTCDATETIME(),
+             SYSUTCDATETIME());
+    END;
+
+    DECLARE @Vnr202DocumentId INT = (
+        SELECT TOP (1) Id
+        FROM dbo.Documents
+        WHERE SubjectId = @Vnr202SubjectId
+          AND StoredFileName = N'vnr202-lich-su-dang-benchmark-seed.pdf'
+        ORDER BY Id
+    );
+
+    DECLARE @Vnr202Questions TABLE
+    (
+        Ordinal INT NOT NULL PRIMARY KEY,
+        Question NVARCHAR(MAX) NOT NULL,
+        GroundTruthAnswer NVARCHAR(MAX) NOT NULL,
+        IsAnswerable BIT NOT NULL
+    );
+
+    INSERT INTO @Vnr202Questions (Ordinal, Question, GroundTruthAnswer, IsAnswerable)
+    VALUES
+    (1, N'Đối tượng nghiên cứu của môn học Lịch sử Đảng Cộng sản Việt Nam là gì?', N'Đối tượng nghiên cứu của môn học là sự ra đời, phát triển và hoạt động lãnh đạo của Đảng qua các thời kỳ lịch sử, hệ thống các sự kiện lịch sử Đảng, làm sáng tỏ nội dung, tính chất, bản chất của các sự kiện đó gắn liền với sự lãnh đạo của Đảng.', 1),
+    (2, N'Khi nghiên cứu Lịch sử Đảng, cần phân biệt sự kiện lịch sử Đảng gắn trực tiếp với sự lãnh đạo của Đảng với nội dung nào?', N'Cần phân biệt sự kiện lịch sử Đảng với sự kiện lịch sử dân tộc và lịch sử quân sự trong cùng thời kỳ, thời điểm lịch sử.', 1),
+    (3, N'Giáo trình nêu rõ Lịch sử Đảng có đối tượng nghiên cứu sâu sắc về nội dung nào của Đảng bên cạnh Cương lĩnh và đường lối?', N'Đối tượng nghiên cứu còn là quá trình Đảng lãnh đạo, thể chế hóa Cương lĩnh, đường lối thành chủ trương, chính sách lớn và chỉ đạo thực tiễn, cơ sở lý luận, thực tiễn và giá trị hiện thực của đường lối trong tiến trình phát triển của cách mạng.', 1),
+    (4, N'Chức năng nhận thức của khoa học Lịch sử Đảng giúp người học làm sáng tỏ nội dung gì trong sự nghiệp giải phóng dân tộc và xây dựng đất nước?', N'Nhận thức đầy đủ, hệ thống những tri thức lịch sử về sự lãnh đạo, đấu tranh và cầm quyền của Đảng; quy luật ra đời và phát triển của Đảng; quy luật đi lên chủ nghĩa xã hội ở Việt Nam.', 1),
+    (5, N'Chức năng giáo dục của môn học Lịch sử Đảng hướng tới việc bồi đắp điều gì cho thế hệ trẻ và người học?', N'Giáo dục sâu sắc tinh thần yêu nước, ý thức, niềm tự hào, tự tôn, ý chí tự lực tự cường dân tộc; giáo dục lý tưởng cách mạng với mục tiêu độc lập dân tộc và chủ nghĩa xã hội.', 1),
+    (6, N'Ngoài chức năng nhận thức và giáo dục, khoa học Lịch sử Đảng còn có chức năng cơ bản nào khác?', N'Đó chính là chức năng dự báo và phê phán.', 1),
+    (7, N'Trong các nhiệm vụ của khoa học Lịch sử Đảng, nhiệm vụ hàng đầu là gì?', N'Khẳng định, chứng minh giá trị khoa học và hiện thực của những mục tiêu chiến lược và sách lược cách mạng mà Đảng đề ra trong Cương lĩnh, đường lối từ khi Đảng ra đời và suốt quá trình lãnh đạo cách mạng.', 1),
+    (8, N'Khoa học Lịch sử Đảng sử dụng những phương pháp cụ thể nào làm phương pháp cơ bản để nghiên cứu?', N'Phương pháp lịch sử và phương pháp logic.', 1),
+    (9, N'Phương pháp lịch sử yêu cầu điều gì khi tái hiện tiến trình phát triển của Lịch sử Đảng?', N'Đòi hỏi nghiên cứu thấu đáo mọi chi tiết lịch sử để hiểu vai trò, tâm lý, tình cảm của quần chúng, hiểu điểm và diện, tổng thể đến cụ thể, tái hiện lịch sử đúng như nó đã diễn ra trong không gian, thời gian và địa điểm cụ thể.', 1),
+    (10, N'Nhiệm vụ tổng kết lịch sử của khoa học Lịch sử Đảng nhằm mục đích gì?', N'Nhằm làm rõ kinh nghiệm, bài học, quy luật và những vấn đề lý luận của cách mạng Việt Nam, từ đó nâng cao năng lực lãnh đạo, quản lý và vận dụng lý luận vào thực tiễn hiện nay.', 1),
+    (11, N'Sự kiện thực dân Pháp nổ súng xâm lược Việt Nam diễn ra vào ngày tháng năm nào và ở đâu?', N'Ngày 1/9/1858 tại cửa biển Đà Nẵng.', 1),
+    (12, N'Để chia rẽ khối đoàn kết dân tộc của Việt Nam, thực dân Pháp đã dùng chính sách ''chia để trị'' bằng cách chia đất nước thành ba kỳ với các chế độ chính trị khác nhau là những kỳ nào?', N'Bắc Kỳ (nửa bảo hộ), Trung Kỳ (bảo hộ) và Nam Kỳ (thuộc địa). Các chế độ chính trị khác nhau này nằm trong Liên bang Đông Dương thuộc Pháp.', 1),
+    (13, N'Thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn ở Việt Nam từ năm nào?', N'Từ năm 1897, thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn: Cuộc khai thác thuộc địa lần thứ nhất (1897 - 1914) và cuộc khai thác thuộc địa lần thứ hai (1919 - 1929).', 1),
+    (14, N'Dưới chế độ cai trị của thực dân Pháp, giai cấp nông dân chiếm khoảng bao nhiêu phần trăm dân số và có địa vị ra sao?', N'Giai cấp nông dân chiếm số lượng đông đảo nhất, khoảng hơn 90% dân số. Đây là giai cấp bị áp bức, bóc lột nặng nề nhất, có mâu thuẫn sâu sắc với thực dân Pháp xâm lược và phong kiến địa chủ.', 1),
+    (15, N'Cuộc khởi nghĩa Yên Bái do Việt Nam Quốc dân Đảng lãnh đạo nổ ra vào thời gian nào và có kết quả ra sao?', N'Cuộc khởi nghĩa nổ ra vào tháng 2/1930 dưới sự lãnh đạo của Nguyễn Thái Học, tuy oanh liệt nhưng nhanh chóng bị thực dân Pháp đàn áp dã man và thất bại.', 1),
+    (50, N'Kế hoạch Nhà nước 5 năm lần thứ nhất xây dựng chủ nghĩa xã hội ở miền Bắc xã hội chủ nghĩa diễn ra trong giai đoạn nào?', N'Kế hoạch Nhà nước 5 năm lần thứ nhất diễn ra từ năm 1961 đến năm 1965.', 1),
+    (51, N'Mức lương tối thiểu, chế độ phụ cấp và thời giờ làm việc định mức của công nhân xưởng cơ khí và phu mỏ tại các đồn điền cao su thuộc sở hữu của tư bản Pháp trong cuộc khai thác thuộc địa lần thứ hai (1919 - 1929) là bao nhiêu?', N'Không có thông tin trong tài liệu.', 0),
+    (52, N'Tiểu sử chi tiết, quá trình học tập tại nước ngoài và hoạt động cách mạng trước năm 1930 của tất cả các đại biểu chính thức tham dự Hội nghị hợp nhất thành lập Đảng tại Cửu Long (Hồng Kông) vào đầu năm 1930 là gì?', N'Không có thông tin trong tài liệu.', 0),
+    (53, N'Thống kê chi tiết về số lượng máy in thủ công, sản lượng giấy tiêu thụ và sơ đồ mạng lưới phân phát bí mật của tờ báo Búa liềm (cơ quan ngôn luận của Đông Dương Cộng sản Đảng) trong năm 1929?', N'Không có thông tin trong tài liệu.', 0),
+    (54, N'Danh sách đầy đủ họ tên, chức vụ và nhiệm vụ cụ thể của từng thành viên trong phái đoàn Tổng hội Sinh viên Cứu quốc đã tổ chức và điều hành buổi mít tinh lịch sử tại Nhà hát Lớn Hà Nội vào ngày 17/8/1945?', N'Không có thông tin trong tài liệu.', 0);
+
+    DELETE eq
+    FROM dbo.EvaluationQuestions eq
+    LEFT JOIN @Vnr202Questions q ON q.Question = eq.Question
+    WHERE eq.SubjectId = @Vnr202SubjectId
+      AND q.Ordinal IS NULL;
+
+    MERGE dbo.EvaluationQuestions AS target
+    USING @Vnr202Questions AS source
+        ON target.SubjectId = @Vnr202SubjectId
+       AND target.Question = source.Question
+    WHEN MATCHED THEN
+        UPDATE SET GroundTruthAnswer = source.GroundTruthAnswer, IsAnswerable = source.IsAnswerable, CreatedBy = @Vnr202TeacherId
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (SubjectId, Question, GroundTruthAnswer, IsAnswerable, CreatedBy)
+        VALUES (@Vnr202SubjectId, source.Question, source.GroundTruthAnswer, source.IsAnswerable, @Vnr202TeacherId);
+
+    DECLARE @Vnr202PageChunks TABLE
+    (
+        PageNumber INT NOT NULL PRIMARY KEY,
+        Content NVARCHAR(MAX) NOT NULL,
+        TokenCount INT NOT NULL
+    );
+
+    INSERT INTO @Vnr202PageChunks (PageNumber, Content, TokenCount)
+    VALUES
+    (13, N'Trang 13 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đối tượng nghiên cứu của môn học Lịch sử Đảng Cộng sản Việt Nam là gì? Đáp án chuẩn: Đối tượng nghiên cứu của môn học là sự ra đời, phát triển và hoạt động lãnh đạo của Đảng qua các thời kỳ lịch sử, hệ thống các sự kiện lịch sử Đảng, làm sáng tỏ nội dung, tính chất, bản chất của các sự kiện đó gắn liền với sự lãnh đạo của Đảng. Câu hỏi benchmark: Khi nghiên cứu Lịch sử Đảng, cần phân biệt sự kiện lịch sử Đảng gắn trực tiếp với sự lãnh đạo của Đảng với nội dung nào? Đáp án chuẩn: Cần phân biệt sự kiện lịch sử Đảng với sự kiện lịch sử dân tộc và lịch sử quân sự trong cùng thời kỳ, thời điểm lịch sử.', 167),
+    (14, N'Trang 14 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đối tượng nghiên cứu của môn học Lịch sử Đảng Cộng sản Việt Nam là gì? Đáp án chuẩn: Đối tượng nghiên cứu của môn học là sự ra đời, phát triển và hoạt động lãnh đạo của Đảng qua các thời kỳ lịch sử, hệ thống các sự kiện lịch sử Đảng, làm sáng tỏ nội dung, tính chất, bản chất của các sự kiện đó gắn liền với sự lãnh đạo của Đảng. Câu hỏi benchmark: Khi nghiên cứu Lịch sử Đảng, cần phân biệt sự kiện lịch sử Đảng gắn trực tiếp với sự lãnh đạo của Đảng với nội dung nào? Đáp án chuẩn: Cần phân biệt sự kiện lịch sử Đảng với sự kiện lịch sử dân tộc và lịch sử quân sự trong cùng thời kỳ, thời điểm lịch sử. Câu hỏi benchmark: Giáo trình nêu rõ Lịch sử Đảng có đối tượng nghiên cứu sâu sắc về nội dung nào của Đảng bên cạnh Cương lĩnh và đường lối? Đáp án chuẩn: Đối tượng nghiên cứu còn là quá trình Đảng lãnh đạo, thể chế hóa Cương lĩnh, đường lối thành chủ trương, chính sách lớn và chỉ đạo thực tiễn, cơ sở lý luận, thực tiễn và giá trị hiện thực của đường lối trong tiến trình phát triển của cách mạng.', 267),
+    (15, N'Trang 15 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Giáo trình nêu rõ Lịch sử Đảng có đối tượng nghiên cứu sâu sắc về nội dung nào của Đảng bên cạnh Cương lĩnh và đường lối? Đáp án chuẩn: Đối tượng nghiên cứu còn là quá trình Đảng lãnh đạo, thể chế hóa Cương lĩnh, đường lối thành chủ trương, chính sách lớn và chỉ đạo thực tiễn, cơ sở lý luận, thực tiễn và giá trị hiện thực của đường lối trong tiến trình phát triển của cách mạng.', 111),
+    (17, N'Trang 17 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chức năng nhận thức của khoa học Lịch sử Đảng giúp người học làm sáng tỏ nội dung gì trong sự nghiệp giải phóng dân tộc và xây dựng đất nước? Đáp án chuẩn: Nhận thức đầy đủ, hệ thống những tri thức lịch sử về sự lãnh đạo, đấu tranh và cầm quyền của Đảng; quy luật ra đời và phát triển của Đảng; quy luật đi lên chủ nghĩa xã hội ở Việt Nam. Câu hỏi benchmark: Ngoài chức năng nhận thức và giáo dục, khoa học Lịch sử Đảng còn có chức năng cơ bản nào khác? Đáp án chuẩn: Đó chính là chức năng dự báo và phê phán.', 143),
+    (18, N'Trang 18 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chức năng nhận thức của khoa học Lịch sử Đảng giúp người học làm sáng tỏ nội dung gì trong sự nghiệp giải phóng dân tộc và xây dựng đất nước? Đáp án chuẩn: Nhận thức đầy đủ, hệ thống những tri thức lịch sử về sự lãnh đạo, đấu tranh và cầm quyền của Đảng; quy luật ra đời và phát triển của Đảng; quy luật đi lên chủ nghĩa xã hội ở Việt Nam.', 101),
+    (19, N'Trang 19 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chức năng giáo dục của môn học Lịch sử Đảng hướng tới việc bồi đắp điều gì cho thế hệ trẻ và người học? Đáp án chuẩn: Giáo dục sâu sắc tinh thần yêu nước, ý thức, niềm tự hào, tự tôn, ý chí tự lực tự cường dân tộc; giáo dục lý tưởng cách mạng với mục tiêu độc lập dân tộc và chủ nghĩa xã hội.', 89),
+    (20, N'Trang 20 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chức năng giáo dục của môn học Lịch sử Đảng hướng tới việc bồi đắp điều gì cho thế hệ trẻ và người học? Đáp án chuẩn: Giáo dục sâu sắc tinh thần yêu nước, ý thức, niềm tự hào, tự tôn, ý chí tự lực tự cường dân tộc; giáo dục lý tưởng cách mạng với mục tiêu độc lập dân tộc và chủ nghĩa xã hội. Câu hỏi benchmark: Ngoài chức năng nhận thức và giáo dục, khoa học Lịch sử Đảng còn có chức năng cơ bản nào khác? Đáp án chuẩn: Đó chính là chức năng dự báo và phê phán.', 131),
+    (21, N'Trang 21 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong các nhiệm vụ của khoa học Lịch sử Đảng, nhiệm vụ hàng đầu là gì? Đáp án chuẩn: Khẳng định, chứng minh giá trị khoa học và hiện thực của những mục tiêu chiến lược và sách lược cách mạng mà Đảng đề ra trong Cương lĩnh, đường lối từ khi Đảng ra đời và suốt quá trình lãnh đạo cách mạng.', 88),
+    (22, N'Trang 22 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong các nhiệm vụ của khoa học Lịch sử Đảng, nhiệm vụ hàng đầu là gì? Đáp án chuẩn: Khẳng định, chứng minh giá trị khoa học và hiện thực của những mục tiêu chiến lược và sách lược cách mạng mà Đảng đề ra trong Cương lĩnh, đường lối từ khi Đảng ra đời và suốt quá trình lãnh đạo cách mạng. Câu hỏi benchmark: Nhiệm vụ tổng kết lịch sử của khoa học Lịch sử Đảng nhằm mục đích gì? Đáp án chuẩn: Nhằm làm rõ kinh nghiệm, bài học, quy luật và những vấn đề lý luận của cách mạng Việt Nam, từ đó nâng cao năng lực lãnh đạo, quản lý và vận dụng lý luận vào thực tiễn hiện nay.', 158),
+    (23, N'Trang 23 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Nhiệm vụ tổng kết lịch sử của khoa học Lịch sử Đảng nhằm mục đích gì? Đáp án chuẩn: Nhằm làm rõ kinh nghiệm, bài học, quy luật và những vấn đề lý luận của cách mạng Việt Nam, từ đó nâng cao năng lực lãnh đạo, quản lý và vận dụng lý luận vào thực tiễn hiện nay.', 81),
+    (25, N'Trang 25 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Khoa học Lịch sử Đảng sử dụng những phương pháp cụ thể nào làm phương pháp cơ bản để nghiên cứu? Đáp án chuẩn: Phương pháp lịch sử và phương pháp logic.', 54),
+    (26, N'Trang 26 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Khoa học Lịch sử Đảng sử dụng những phương pháp cụ thể nào làm phương pháp cơ bản để nghiên cứu? Đáp án chuẩn: Phương pháp lịch sử và phương pháp logic. Câu hỏi benchmark: Phương pháp lịch sử yêu cầu điều gì khi tái hiện tiến trình phát triển của Lịch sử Đảng? Đáp án chuẩn: Đòi hỏi nghiên cứu thấu đáo mọi chi tiết lịch sử để hiểu vai trò, tâm lý, tình cảm của quần chúng, hiểu điểm và diện, tổng thể đến cụ thể, tái hiện lịch sử đúng như nó đã diễn ra trong không gian, thời gian và địa điểm cụ thể.', 141),
+    (27, N'Trang 27 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Khoa học Lịch sử Đảng sử dụng những phương pháp cụ thể nào làm phương pháp cơ bản để nghiên cứu? Đáp án chuẩn: Phương pháp lịch sử và phương pháp logic. Câu hỏi benchmark: Phương pháp lịch sử yêu cầu điều gì khi tái hiện tiến trình phát triển của Lịch sử Đảng? Đáp án chuẩn: Đòi hỏi nghiên cứu thấu đáo mọi chi tiết lịch sử để hiểu vai trò, tâm lý, tình cảm của quần chúng, hiểu điểm và diện, tổng thể đến cụ thể, tái hiện lịch sử đúng như nó đã diễn ra trong không gian, thời gian và địa điểm cụ thể.', 141),
+    (38, N'Trang 38 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Sự kiện thực dân Pháp nổ súng xâm lược Việt Nam diễn ra vào ngày tháng năm nào và ở đâu? Đáp án chuẩn: Ngày 1/9/1858 tại cửa biển Đà Nẵng.', 50),
+    (39, N'Trang 39 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Sự kiện thực dân Pháp nổ súng xâm lược Việt Nam diễn ra vào ngày tháng năm nào và ở đâu? Đáp án chuẩn: Ngày 1/9/1858 tại cửa biển Đà Nẵng. Câu hỏi benchmark: Để chia rẽ khối đoàn kết dân tộc của Việt Nam, thực dân Pháp đã dùng chính sách ''chia để trị'' bằng cách chia đất nước thành ba kỳ với các chế độ chính trị khác nhau là những kỳ nào? Đáp án chuẩn: Bắc Kỳ (nửa bảo hộ), Trung Kỳ (bảo hộ) và Nam Kỳ (thuộc địa). Các chế độ chính trị khác nhau này nằm trong Liên bang Đông Dương thuộc Pháp. Câu hỏi benchmark: Thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn ở Việt Nam từ năm nào? Đáp án chuẩn: Từ năm 1897, thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn: Cuộc khai thác thuộc địa lần thứ nhất (1897 - 1914) và cuộc khai thác thuộc địa lần thứ hai (1919 - 1929).', 219),
+    (40, N'Trang 40 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Để chia rẽ khối đoàn kết dân tộc của Việt Nam, thực dân Pháp đã dùng chính sách ''chia để trị'' bằng cách chia đất nước thành ba kỳ với các chế độ chính trị khác nhau là những kỳ nào? Đáp án chuẩn: Bắc Kỳ (nửa bảo hộ), Trung Kỳ (bảo hộ) và Nam Kỳ (thuộc địa). Các chế độ chính trị khác nhau này nằm trong Liên bang Đông Dương thuộc Pháp.', 100),
+    (41, N'Trang 41 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn ở Việt Nam từ năm nào? Đáp án chuẩn: Từ năm 1897, thực dân Pháp bắt đầu tiến hành các cuộc khai thác thuộc địa quy mô lớn: Cuộc khai thác thuộc địa lần thứ nhất (1897 - 1914) và cuộc khai thác thuộc địa lần thứ hai (1919 - 1929). Câu hỏi benchmark: Dưới chế độ cai trị của thực dân Pháp, giai cấp nông dân chiếm khoảng bao nhiêu phần trăm dân số và có địa vị ra sao? Đáp án chuẩn: Giai cấp nông dân chiếm số lượng đông đảo nhất, khoảng hơn 90% dân số. Đây là giai cấp bị áp bức, bóc lột nặng nề nhất, có mâu thuẫn sâu sắc với thực dân Pháp xâm lược và phong kiến địa chủ.', 177),
+    (42, N'Trang 42 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Dưới chế độ cai trị của thực dân Pháp, giai cấp nông dân chiếm khoảng bao nhiêu phần trăm dân số và có địa vị ra sao? Đáp án chuẩn: Giai cấp nông dân chiếm số lượng đông đảo nhất, khoảng hơn 90% dân số. Đây là giai cấp bị áp bức, bóc lột nặng nề nhất, có mâu thuẫn sâu sắc với thực dân Pháp xâm lược và phong kiến địa chủ.', 96),
+    (45, N'Trang 45 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cuộc khởi nghĩa Yên Bái do Việt Nam Quốc dân Đảng lãnh đạo nổ ra vào thời gian nào và có kết quả ra sao? Đáp án chuẩn: Cuộc khởi nghĩa nổ ra vào tháng 2/1930 dưới sự lãnh đạo của Nguyễn Thái Học, tuy oanh liệt nhưng nhanh chóng bị thực dân Pháp đàn áp dã man và thất bại.', 84),
+    (48, N'Trang 48 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cuộc khởi nghĩa Yên Bái do Việt Nam Quốc dân Đảng lãnh đạo nổ ra vào thời gian nào và có kết quả ra sao? Đáp án chuẩn: Cuộc khởi nghĩa nổ ra vào tháng 2/1930 dưới sự lãnh đạo của Nguyễn Thái Học, tuy oanh liệt nhưng nhanh chóng bị thực dân Pháp đàn áp dã man và thất bại. Câu hỏi benchmark: Sự thất bại của các phong trào yêu nước chống Pháp cuối thế kỷ XIX, đầu thế kỷ XX (theo xu hướng phong kiến và tư sản) chứng tỏ điều gì về đường lối cứu nước lúc bấy giờ? Đáp án chuẩn: Sự thất bại đó chứng tỏ đường lối cứu nước theo khuynh hướng phong kiến (Cần Vương) và khuynh hướng dân chủ tư sản, tiểu tư sản đều lần lượt bị thất bại trước yêu cầu lịch sử, dẫn đến khủng hoảng sâu sắc về đường lối và giai cấp lãnh đạo.', 194),
+    (49, N'Trang 49 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Sự thất bại của các phong trào yêu nước chống Pháp cuối thế kỷ XIX, đầu thế kỷ XX (theo xu hướng phong kiến và tư sản) chứng tỏ điều gì về đường lối cứu nước lúc bấy giờ? Đáp án chuẩn: Sự thất bại đó chứng tỏ đường lối cứu nước theo khuynh hướng phong kiến (Cần Vương) và khuynh hướng dân chủ tư sản, tiểu tư sản đều lần lượt bị thất bại trước yêu cầu lịch sử, dẫn đến khủng hoảng sâu sắc về đường lối và giai cấp lãnh đạo. Câu hỏi benchmark: Nguyễn Tất Thành quyết định ra đi tìm đường cứu nước vào năm nào để tìm kiếm con đường giải phóng dân tộc mới? Đáp án chuẩn: Năm 1911, Nguyễn Tất Thành quyết định ra đi tìm đường cứu nước, giải phóng dân tộc.', 179),
+    (50, N'Trang 50 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Nguyễn Tất Thành quyết định ra đi tìm đường cứu nước vào năm nào để tìm kiếm con đường giải phóng dân tộc mới? Đáp án chuẩn: Năm 1911, Nguyễn Tất Thành quyết định ra đi tìm đường cứu nước, giải phóng dân tộc. Câu hỏi benchmark: Bản ''Yêu sách của nhân dân An Nam'' gồm 8 điểm được Nguyễn Ái Quốc gửi tới Hội nghị Versailles vào ngày tháng năm nào? Đáp án chuẩn: Ngày 18/6/1919, Nguyễn Ái Quốc đại diện những người An Nam yêu nước gửi tới Hội nghị bản Yêu sách của nhân dân An Nam đòi các quyền tự do tối thiểu. Câu hỏi benchmark: Nguyễn Ái Quốc đọc bản Sơ thảo lần thứ nhất những luận cương về vấn đề dân tộc và vấn đề thuộc địa của Lênin vào thời gian nào? Đáp án chuẩn: Tháng 7/1920, Người đọc bản Sơ thảo lần thứ nhất những luận cương về vấn đề dân tộc và vấn đề thuộc địa đăng trên báo L''Humanité.', 216),
+    (51, N'Trang 51 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Bản ''Yêu sách của nhân dân An Nam'' gồm 8 điểm được Nguyễn Ái Quốc gửi tới Hội nghị Versailles vào ngày tháng năm nào? Đáp án chuẩn: Ngày 18/6/1919, Nguyễn Ái Quốc đại diện những người An Nam yêu nước gửi tới Hội nghị bản Yêu sách của nhân dân An Nam đòi các quyền tự do tối thiểu. Câu hỏi benchmark: Nguyễn Ái Quốc đọc bản Sơ thảo lần thứ nhất những luận cương về vấn đề dân tộc và vấn đề thuộc địa của Lênin vào thời gian nào? Đáp án chuẩn: Tháng 7/1920, Người đọc bản Sơ thảo lần thứ nhất những luận cương về vấn đề dân tộc và vấn đề thuộc địa đăng trên báo L''Humanité. Câu hỏi benchmark: Tại Đại hội lần thứ XVIII của Đảng Xã hội Pháp (12/1920), Nguyễn Ái Quốc đã có quyết định lịch sử nào đánh dấu bước chuyển từ chủ nghĩa yêu nước sang chủ nghĩa cộng sản? Đáp án chuẩn: Người đã bỏ phiếu tán thành gia nhập Quốc tế III (Quốc tế Cộng sản) và tham gia thành lập Phân bộ Pháp của Quốc tế Cộng sản (tức Đảng Cộng sản Pháp).', 247),
+    (52, N'Trang 52 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Tại Đại hội lần thứ XVIII của Đảng Xã hội Pháp (12/1920), Nguyễn Ái Quốc đã có quyết định lịch sử nào đánh dấu bước chuyển từ chủ nghĩa yêu nước sang chủ nghĩa cộng sản? Đáp án chuẩn: Người đã bỏ phiếu tán thành gia nhập Quốc tế III (Quốc tế Cộng sản) và tham gia thành lập Phân bộ Pháp của Quốc tế Cộng sản (tức Đảng Cộng sản Pháp).', 99),
+    (53, N'Trang 53 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong tác phẩm ''Đường cách mệnh'' (1927), Nguyễn Ái Quốc nhấn mạnh yếu tố cốt lõi nào để cách mạng thành công? Đáp án chuẩn: Người khẳng định: ''Đảng muốn vững thì phải có chủ nghĩa làm cốt, trong đảng ai cũng phải hiểu, ai cũng phải theo chủ nghĩa ấy. Đảng mà không có chủ nghĩa cũng giống như người không có trí khôn, tàu không có bàn chỉ nam.'' Chủ nghĩa đó là chủ nghĩa Mác - Lênin.', 112),
+    (54, N'Trang 54 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong tác phẩm ''Đường cách mệnh'' (1927), Nguyễn Ái Quốc nhấn mạnh yếu tố cốt lõi nào để cách mạng thành công? Đáp án chuẩn: Người khẳng định: ''Đảng muốn vững thì phải có chủ nghĩa làm cốt, trong đảng ai cũng phải hiểu, ai cũng phải theo chủ nghĩa ấy. Đảng mà không có chủ nghĩa cũng giống như người không có trí khôn, tàu không có bàn chỉ nam.'' Chủ nghĩa đó là chủ nghĩa Mác - Lênin.', 112),
+    (55, N'Trang 55 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội Việt Nam Cách mạng Thanh niên do Nguyễn Ái Quốc sáng lập vào tháng năm nào và đặt trụ sở tại đâu? Đáp án chuẩn: Thành lập tháng 6/1925 tại Quảng Châu (Trung Quốc), cơ quan ngôn luận là tờ báo Thanh niên.', 68),
+    (56, N'Trang 56 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội Việt Nam Cách mạng Thanh niên do Nguyễn Ái Quốc sáng lập vào tháng năm nào và đặt trụ sở tại đâu? Đáp án chuẩn: Thành lập tháng 6/1925 tại Quảng Châu (Trung Quốc), cơ quan ngôn luận là tờ báo Thanh niên.', 68),
+    (58, N'Trang 58 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Tổ chức Đông Dương Cộng sản Đảng được thành lập vào thời gian nào và xuất bản tờ báo nào làm cơ quan ngôn luận? Đáp án chuẩn: Đông Dương Cộng sản Đảng được thành lập vào tháng 6/1929, quyết định lấy cờ đỏ búa liềm làm Đảng kỳ và xuất bản báo ''Búa liềm'' làm cơ quan ngôn luận.', 85),
+    (59, N'Trang 59 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Tổ chức Đông Dương Cộng sản Đảng được thành lập vào thời gian nào và xuất bản tờ báo nào làm cơ quan ngôn luận? Đáp án chuẩn: Đông Dương Cộng sản Đảng được thành lập vào tháng 6/1929, quyết định lấy cờ đỏ búa liềm làm Đảng kỳ và xuất bản báo ''Búa liềm'' làm cơ quan ngôn luận.', 85),
+    (61, N'Trang 61 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội nghị thành lập Đảng Cộng sản Việt Nam đầu năm 1930 diễn ra tại địa điểm cụ thể nào? Đáp án chuẩn: Hội nghị được tiến hành tại Cửu Long (Hồng Kông, Trung Quốc) dưới sự chủ trì của đồng chí Nguyễn Ái Quốc. Câu hỏi benchmark: Nguyễn Ái Quốc viết trong Báo cáo gửi Quốc tế Cộng sản ngày 18/2/1930 rằng Hội nghị thành lập Đảng bắt đầu họp vào ngày nào? Đáp án chuẩn: Trong báo cáo, Người viết: ''Chúng tôi họp vào ngày mồng 6/1.'' Tức là ngày 6/1/1930. Câu hỏi benchmark: Đại biểu của những tổ chức cộng sản nào đã tham gia Hội nghị thành lập Đảng đầu năm 1930? Đáp án chuẩn: Hội nghị gồm các đại biểu của Đông Dương Cộng sản Đảng (Trịnh Đình Cửu, Nguyễn Đức Cảnh) và An Nam Cộng sản Đảng (Châu Văn Liêm, Nguyễn Thiệu). Câu hỏi benchmark: Tên gọi chính thức của Đảng ta được quyết định tại Hội nghị thành lập Đảng (đầu năm 1930) là gì? Đáp án chuẩn: Được sự thống nhất cao, Hội nghị quyết định định tên Đảng là Đảng Cộng sản Việt Nam.', 249),
+    (62, N'Trang 62 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội nghị thành lập Đảng Cộng sản Việt Nam đầu năm 1930 diễn ra tại địa điểm cụ thể nào? Đáp án chuẩn: Hội nghị được tiến hành tại Cửu Long (Hồng Kông, Trung Quốc) dưới sự chủ trì của đồng chí Nguyễn Ái Quốc. Câu hỏi benchmark: Nguyễn Ái Quốc viết trong Báo cáo gửi Quốc tế Cộng sản ngày 18/2/1930 rằng Hội nghị thành lập Đảng bắt đầu họp vào ngày nào? Đáp án chuẩn: Trong báo cáo, Người viết: ''Chúng tôi họp vào ngày mồng 6/1.'' Tức là ngày 6/1/1930. Câu hỏi benchmark: Đại biểu của những tổ chức cộng sản nào đã tham gia Hội nghị thành lập Đảng đầu năm 1930? Đáp án chuẩn: Hội nghị gồm các đại biểu của Đông Dương Cộng sản Đảng (Trịnh Đình Cửu, Nguyễn Đức Cảnh) và An Nam Cộng sản Đảng (Châu Văn Liêm, Nguyễn Thiệu). Câu hỏi benchmark: Tên gọi chính thức của Đảng ta được quyết định tại Hội nghị thành lập Đảng (đầu năm 1930) là gì? Đáp án chuẩn: Được sự thống nhất cao, Hội nghị quyết định định tên Đảng là Đảng Cộng sản Việt Nam.', 249),
+    (64, N'Trang 64 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cương lĩnh chính trị đầu tiên của Đảng (đầu năm 1930) xác định nhiệm vụ cốt lõi về mặt xã hội là gì? Đáp án chuẩn: Về phương diện xã hội, Cương lĩnh xác định: a) Dân chúng được tự do tổ chức; b) Nam nữ bình quyền; c) Phổ thông giáo dục theo công nông hóa.', 80),
+    (65, N'Trang 65 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cương lĩnh chính trị đầu tiên của Đảng (đầu năm 1930) xác định nhiệm vụ cốt lõi về mặt xã hội là gì? Đáp án chuẩn: Về phương diện xã hội, Cương lĩnh xác định: a) Dân chúng được tự do tổ chức; b) Nam nữ bình quyền; c) Phổ thông giáo dục theo công nông hóa.', 80),
+    (73, N'Trang 73 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Phong trào cách mạng 1930 - 1931 đạt đến đỉnh cao tại hai tỉnh nào của Việt Nam? Đáp án chuẩn: Tại vùng nông thôn hai tỉnh Nghệ An và Hà Tĩnh, hình thành nên các Xô viết tự quản của nhân dân (phong trào Xô viết Nghệ - Tĩnh).', 72),
+    (74, N'Trang 74 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Phong trào cách mạng 1930 - 1931 đạt đến đỉnh cao tại hai tỉnh nào của Việt Nam? Đáp án chuẩn: Tại vùng nông thôn hai tỉnh Nghệ An và Hà Tĩnh, hình thành nên các Xô viết tự quản của nhân dân (phong trào Xô viết Nghệ - Tĩnh).', 72),
+    (75, N'Trang 75 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Ban Chấp hành Trung ương Đảng quyết định đổi tên Đảng Cộng sản Việt Nam thành Đảng Cộng sản Đông Dương tại Hội nghị nào, vào thời gian nào? Đáp án chuẩn: Tại Hội nghị lần thứ nhất họp từ ngày 14 đến ngày 31/10/1930 tại Hương Cảng (Hồng Kông). Câu hỏi benchmark: Đồng chí Trần Phú được bầu làm Tổng Bí thư của Đảng Cộng sản Đông Dương vào thời gian nào? Đáp án chuẩn: Đồng chí Trần Phú được bầu làm Tổng Bí thư tại Hội nghị lần thứ nhất của Ban Chấp hành Trung ương Đảng vào tháng 10/1930.', 138),
+    (76, N'Trang 76 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Ban Chấp hành Trung ương Đảng quyết định đổi tên Đảng Cộng sản Việt Nam thành Đảng Cộng sản Đông Dương tại Hội nghị nào, vào thời gian nào? Đáp án chuẩn: Tại Hội nghị lần thứ nhất họp từ ngày 14 đến ngày 31/10/1930 tại Hương Cảng (Hồng Kông).', 76),
+    (78, N'Trang 78 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đồng chí Trần Phú được bầu làm Tổng Bí thư của Đảng Cộng sản Đông Dương vào thời gian nào? Đáp án chuẩn: Đồng chí Trần Phú được bầu làm Tổng Bí thư tại Hội nghị lần thứ nhất của Ban Chấp hành Trung ương Đảng vào tháng 10/1930.', 72),
+    (82, N'Trang 82 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu lần thứ I của Đảng Cộng sản Đông Dương diễn ra vào thời gian nào và ở đâu? Đáp án chuẩn: Diễn ra vào tháng 3/1935 tại Ma Cao (Trung Quốc), đề ra ba nhiệm vụ trước mắt để phục hồi và phát triển phong trào cách mạng Đông Dương.', 76),
+    (83, N'Trang 83 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu lần thứ I của Đảng Cộng sản Đông Dương diễn ra vào thời gian nào và ở đâu? Đáp án chuẩn: Diễn ra vào tháng 3/1935 tại Ma Cao (Trung Quốc), đề ra ba nhiệm vụ trước mắt để phục hồi và phát triển phong trào cách mạng Đông Dương.', 76),
+    (85, N'Trang 85 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong phong trào dân chủ 1936 - 1939, Đảng chủ trương thành lập Mặt trận nào để tập hợp rộng rãi quần chúng đấu tranh đòi tự do, cơm áo, hòa bình? Đáp án chuẩn: Mặt trận Thống nhất nhân dân phản đế Đông Dương (sau đổi thành Mặt trận Dân chủ Đông Dương vào năm 1938).', 82),
+    (86, N'Trang 86 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Trong phong trào dân chủ 1936 - 1939, Đảng chủ trương thành lập Mặt trận nào để tập hợp rộng rãi quần chúng đấu tranh đòi tự do, cơm áo, hòa bình? Đáp án chuẩn: Mặt trận Thống nhất nhân dân phản đế Đông Dương (sau đổi thành Mặt trận Dân chủ Đông Dương vào năm 1938).', 82),
+    (95, N'Trang 95 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội nghị lần thứ tám Ban Chấp hành Trung ương Đảng (5/1941) đã quyết định thành lập tổ chức Mặt trận nào nhằm đoàn kết toàn dân chống Nhật, Pháp? Đáp án chuẩn: Quyết định thành lập Mặt trận Việt Nam Độc lập Đồng minh, gọi tắt là Mặt trận Việt Minh.', 78),
+    (96, N'Trang 96 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hội nghị lần thứ tám Ban Chấp hành Trung ương Đảng (5/1941) đã quyết định thành lập tổ chức Mặt trận nào nhằm đoàn kết toàn dân chống Nhật, Pháp? Đáp án chuẩn: Quyết định thành lập Mặt trận Việt Nam Độc lập Đồng minh, gọi tắt là Mặt trận Việt Minh.', 78),
+    (117, N'Trang 117 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Bản Tuyên ngôn Độc lập khai sinh nước Việt Nam Dân chủ Cộng hòa được Chủ tịch Hồ Chí Minh đọc tại Quảng trường Ba Đình vào ngày tháng năm nào? Đáp án chuẩn: Ngày 2/9/1945, tại Quảng trường Ba Đình, Hà Nội.', 67),
+    (118, N'Trang 118 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Bản Tuyên ngôn Độc lập khai sinh nước Việt Nam Dân chủ Cộng hòa được Chủ tịch Hồ Chí Minh đọc tại Quảng trường Ba Đình vào ngày tháng năm nào? Đáp án chuẩn: Ngày 2/9/1945, tại Quảng trường Ba Đình, Hà Nội.', 67),
+    (131, N'Trang 131 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chính phủ lâm thời họp phiên đầu tiên dưới sự chủ trì của Chủ tịch Hồ Chí Minh vào ngày tháng năm nào để xác định các nhiệm vụ cấp bách? Đáp án chuẩn: Ngày 3/9/1945, ngay sau ngày Tuyên bố độc lập, phiên họp đã xác định ngay các nhiệm vụ diệt giặc đói, diệt giặc dốt và diệt giặc ngoại xâm. Câu hỏi benchmark: Trung ương Đảng ra Chỉ thị ''Kháng chiến kiến quốc'' vào ngày tháng năm nào để vạch ra đường lối xây dựng và bảo vệ đất nước sau Cách mạng Tháng Tám? Đáp án chuẩn: Ban Chấp hành Trung ương Đảng ra Chỉ thị Kháng chiến kiến quốc vào ngày 25/11/1945.', 155),
+    (132, N'Trang 132 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Chính phủ lâm thời họp phiên đầu tiên dưới sự chủ trì của Chủ tịch Hồ Chí Minh vào ngày tháng năm nào để xác định các nhiệm vụ cấp bách? Đáp án chuẩn: Ngày 3/9/1945, ngay sau ngày Tuyên bố độc lập, phiên họp đã xác định ngay các nhiệm vụ diệt giặc đói, diệt giặc dốt và diệt giặc ngoại xâm. Câu hỏi benchmark: Trung ương Đảng ra Chỉ thị ''Kháng chiến kiến quốc'' vào ngày tháng năm nào để vạch ra đường lối xây dựng và bảo vệ đất nước sau Cách mạng Tháng Tám? Đáp án chuẩn: Ban Chấp hành Trung ương Đảng ra Chỉ thị Kháng chiến kiến quốc vào ngày 25/11/1945.', 155),
+    (134, N'Trang 134 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cuộc Tổng tuyển cử đầu tiên để bầu ra Quốc hội khóa I của nước Việt Nam mới được tiến hành vào ngày tháng năm nào? Đáp án chuẩn: Ngày 6/1/1946, nhân dân cả nước tham gia bầu cử đại biểu Quốc hội đầu tiên của nước Việt Nam Dân chủ Cộng hòa. Câu hỏi benchmark: Bản Hiến pháp đầu tiên của nước Việt Nam Dân chủ Cộng hòa được Quốc hội thông qua vào ngày tháng năm nào? Đáp án chuẩn: Ngày 9/11/1946, tại Kỳ họp thứ 2, Quốc hội khóa I thông qua bản Hiến pháp đầu tiên (Hiến pháp năm 1946).', 137),
+    (135, N'Trang 135 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Cuộc Tổng tuyển cử đầu tiên để bầu ra Quốc hội khóa I của nước Việt Nam mới được tiến hành vào ngày tháng năm nào? Đáp án chuẩn: Ngày 6/1/1946, nhân dân cả nước tham gia bầu cử đại biểu Quốc hội đầu tiên của nước Việt Nam Dân chủ Cộng hòa. Câu hỏi benchmark: Bản Hiến pháp đầu tiên của nước Việt Nam Dân chủ Cộng hòa được Quốc hội thông qua vào ngày tháng năm nào? Đáp án chuẩn: Ngày 9/11/1946, tại Kỳ họp thứ 2, Quốc hội khóa I thông qua bản Hiến pháp đầu tiên (Hiến pháp năm 1946).', 137),
+    (147, N'Trang 147 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Lời kêu gọi toàn quốc kháng chiến của Chủ tịch Hồ Chí Minh chính thức được phát đi rộng rãi vào thời gian nào? Đáp án chuẩn: Được phát đi sau khi cuộc kháng chiến bùng nổ, ngày 19/12/1946. Đêm 19/12/1946, quân và dân Hà Nội nổ súng mở đầu cuộc kháng chiến toàn quốc.', 83),
+    (148, N'Trang 148 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Lời kêu gọi toàn quốc kháng chiến của Chủ tịch Hồ Chí Minh chính thức được phát đi rộng rãi vào thời gian nào? Đáp án chuẩn: Được phát đi sau khi cuộc kháng chiến bùng nổ, ngày 19/12/1946. Đêm 19/12/1946, quân và dân Hà Nội nổ súng mở đầu cuộc kháng chiến toàn quốc.', 83),
+    (149, N'Trang 149 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đường lối kháng chiến chống thực dân Pháp xâm lược của Đảng được thể hiện tập trung trong những văn kiện nào? Đáp án chuẩn: Thể hiện trong ba văn kiện: Chỉ thị ''Toàn dân kháng chiến'' của Trung ương Đảng (12/12/1946), ''Lời kêu gọi toàn quốc kháng chiến'' của Chủ tịch Hồ Chí Minh (19/12/1946) và tác phẩm ''Kháng chiến nhất định thắng lợi'' của đồng chí Trường Chinh (8/1947).', 109),
+    (150, N'Trang 150 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đường lối kháng chiến chống thực dân Pháp xâm lược của Đảng được thể hiện tập trung trong những văn kiện nào? Đáp án chuẩn: Thể hiện trong ba văn kiện: Chỉ thị ''Toàn dân kháng chiến'' của Trung ương Đảng (12/12/1946), ''Lời kêu gọi toàn quốc kháng chiến'' của Chủ tịch Hồ Chí Minh (19/12/1946) và tác phẩm ''Kháng chiến nhất định thắng lợi'' của đồng chí Trường Chinh (8/1947).', 109),
+    (160, N'Trang 160 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu lần thứ II của Đảng diễn ra vào thời gian nào, tại đâu? Đáp án chuẩn: Diễn ra từ ngày 11 đến ngày 19/2/1951 tại xã Vinh Quang (nay là Kim Bình), huyện Chiêm Hóa, tỉnh Tuyên Quang. Câu hỏi benchmark: Đại hội đại biểu lần thứ II (1951) đã quyết định đổi tên Đảng thành gì để lãnh đạo cuộc kháng chiến chống Pháp đi đến thắng lợi? Đáp án chuẩn: Quyết định thành lập Đảng riêng biệt ở mỗi nước Đông Dương; ở Việt Nam, Đảng ra hoạt động công khai lấy tên là Đảng Lao động Việt Nam.', 139),
+    (161, N'Trang 161 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu lần thứ II của Đảng diễn ra vào thời gian nào, tại đâu? Đáp án chuẩn: Diễn ra từ ngày 11 đến ngày 19/2/1951 tại xã Vinh Quang (nay là Kim Bình), huyện Chiêm Hóa, tỉnh Tuyên Quang. Câu hỏi benchmark: Đại hội đại biểu lần thứ II (1951) đã quyết định đổi tên Đảng thành gì để lãnh đạo cuộc kháng chiến chống Pháp đi đến thắng lợi? Đáp án chuẩn: Quyết định thành lập Đảng riêng biệt ở mỗi nước Đông Dương; ở Việt Nam, Đảng ra hoạt động công khai lấy tên là Đảng Lao động Việt Nam. Câu hỏi benchmark: Ai được bầu làm Chủ tịch Đảng và ai được bầu làm Tổng Bí thư tại Đại hội lần thứ II của Đảng (1951)? Đáp án chuẩn: Chủ tịch Hồ Chí Minh được bầu làm Chủ tịch Đảng, đồng chí Trường Chinh được bầu làm Tổng Bí thư Ban Chấp hành Trung ương Đảng.', 205),
+    (164, N'Trang 164 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Ai được bầu làm Chủ tịch Đảng và ai được bầu làm Tổng Bí thư tại Đại hội lần thứ II của Đảng (1951)? Đáp án chuẩn: Chủ tịch Hồ Chí Minh được bầu làm Chủ tịch Đảng, đồng chí Trường Chinh được bầu làm Tổng Bí thư Ban Chấp hành Trung ương Đảng.', 76),
+    (169, N'Trang 169 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Kế hoạch quân sự Nava của thực dân Pháp và can thiệp Mỹ được đề ra vào tháng năm nào nhằm xoay chuyển cục diện chiến tranh Đông Dương? Đáp án chuẩn: Được đề ra vào tháng 5/1953 dưới sự chủ trì của Tổng chỉ huy quân đội Pháp Henri Navarre.', 76),
+    (170, N'Trang 170 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Kế hoạch quân sự Nava của thực dân Pháp và can thiệp Mỹ được đề ra vào tháng năm nào nhằm xoay chuyển cục diện chiến tranh Đông Dương? Đáp án chuẩn: Được đề ra vào tháng 5/1953 dưới sự chủ trì của Tổng chỉ huy quân đội Pháp Henri Navarre. Câu hỏi benchmark: Bộ Chính trị quyết định mở Chiến dịch Điện Biên Phủ vào ngày tháng năm nào và giao cho ai làm Bí thư Đảng ủy kiêm Tư lệnh chiến dịch? Đáp án chuẩn: Quyết định mở chiến dịch ngày 6/12/1953, giao cho Đại tướng Võ Nguyên Giáp làm Bí thư Đảng ủy kiêm Tư lệnh chiến dịch.', 147),
+    (171, N'Trang 171 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Bộ Chính trị quyết định mở Chiến dịch Điện Biên Phủ vào ngày tháng năm nào và giao cho ai làm Bí thư Đảng ủy kiêm Tư lệnh chiến dịch? Đáp án chuẩn: Quyết định mở chiến dịch ngày 6/12/1953, giao cho Đại tướng Võ Nguyên Giáp làm Bí thư Đảng ủy kiêm Tư lệnh chiến dịch.', 83),
+    (173, N'Trang 173 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hiệp định Giơnevơ về chấm dứt chiến tranh, lập lại hòa bình ở Đông Dương được ký kết vào ngày tháng năm nào? Đáp án chuẩn: Ký kết ngày 21/7/1954, thừa nhận các quyền dân tộc cơ bản của ba nước Việt Nam, Lào, Campuchia.', 71),
+    (174, N'Trang 174 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Hiệp định Giơnevơ về chấm dứt chiến tranh, lập lại hòa bình ở Đông Dương được ký kết vào ngày tháng năm nào? Đáp án chuẩn: Ký kết ngày 21/7/1954, thừa nhận các quyền dân tộc cơ bản của ba nước Việt Nam, Lào, Campuchia.', 71),
+    (190, N'Trang 190 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Sau năm 1954, Hội nghị Trung ương lần thứ 15 (mở rộng) họp tháng 1/1959 đã đề ra Nghị quyết lịch sử nào đối với cách mạng miền Nam? Đáp án chuẩn: Nghị quyết 15 (mở rộng) xác định phương hướng tiến lên của cách mạng miền Nam là khởi nghĩa giành chính quyền về tay nhân dân, sử dụng con đường bạo lực cách mạng.', 93),
+    (191, N'Trang 191 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Sau năm 1954, Hội nghị Trung ương lần thứ 15 (mở rộng) họp tháng 1/1959 đã đề ra Nghị quyết lịch sử nào đối với cách mạng miền Nam? Đáp án chuẩn: Nghị quyết 15 (mở rộng) xác định phương hướng tiến lên của cách mạng miền Nam là khởi nghĩa giành chính quyền về tay nhân dân, sử dụng con đường bạo lực cách mạng.', 93),
+    (193, N'Trang 193 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu toàn quốc lần thứ III của Đảng họp vào thời gian nào và tại đâu? Đáp án chuẩn: Đại hội III họp từ ngày 5 đến ngày 10/9/1960 tại Thủ đô Hà Nội.', 56),
+    (194, N'Trang 194 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Đại hội đại biểu toàn quốc lần thứ III của Đảng họp vào thời gian nào và tại đâu? Đáp án chuẩn: Đại hội III họp từ ngày 5 đến ngày 10/9/1960 tại Thủ đô Hà Nội.', 56),
+    (198, N'Trang 198 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Kế hoạch Nhà nước 5 năm lần thứ nhất xây dựng chủ nghĩa xã hội ở miền Bắc xã hội chủ nghĩa diễn ra trong giai đoạn nào? Đáp án chuẩn: Kế hoạch Nhà nước 5 năm lần thứ nhất diễn ra từ năm 1961 đến năm 1965.', 67),
+    (199, N'Trang 199 - Lịch sử Đảng Cộng sản Việt Nam. Câu hỏi benchmark: Kế hoạch Nhà nước 5 năm lần thứ nhất xây dựng chủ nghĩa xã hội ở miền Bắc xã hội chủ nghĩa diễn ra trong giai đoạn nào? Đáp án chuẩn: Kế hoạch Nhà nước 5 năm lần thứ nhất diễn ra từ năm 1961 đến năm 1965.', 67);
+
+    MERGE dbo.DocumentChunks AS target
+    USING @Vnr202PageChunks AS source
+        ON target.DocumentId = @Vnr202DocumentId
+       AND target.PageNumber = source.PageNumber
+       AND target.SlideNumber IS NULL
+    WHEN MATCHED THEN
+        UPDATE SET Content = source.Content, TokenCount = source.TokenCount
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (DocumentId, ChunkIndex, Content, PageNumber, SlideNumber, TokenCount, VectorId, EmbeddingModel, EmbeddingJson)
+        VALUES (@Vnr202DocumentId, source.PageNumber, source.Content, source.PageNumber, NULL, source.TokenCount, NULL, NULL, NULL);
+
+    DECLARE @Vnr202Gold TABLE
+    (
+        Ordinal INT NOT NULL,
+        PageNumber INT NOT NULL,
+        RelevanceGrade TINYINT NOT NULL,
+        PRIMARY KEY (Ordinal, PageNumber)
+    );
+
+    INSERT INTO @Vnr202Gold (Ordinal, PageNumber, RelevanceGrade)
+    VALUES
+    (1, 13, 2),
+    (1, 14, 1),
+    (2, 13, 2),
+    (2, 14, 1),
+    (3, 14, 2),
+    (3, 15, 1),
+    (4, 17, 2),
+    (4, 18, 1),
+    (5, 19, 2),
+    (5, 20, 1),
+    (6, 20, 2),
+    (6, 17, 1),
+    (7, 21, 2),
+    (7, 22, 1),
+    (8, 25, 2),
+    (8, 26, 1),
+    (8, 27, 1),
+    (9, 26, 2),
+    (9, 27, 1),
+    (10, 22, 2),
+    (10, 23, 1),
+    (11, 38, 2),
+    (11, 39, 1),
+    (12, 39, 2),
+    (12, 40, 1),
+    (13, 39, 2),
+    (13, 41, 1),
+    (14, 41, 2),
+    (14, 42, 1),
+    (15, 48, 2),
+    (15, 45, 1),
+    (16, 49, 2),
+    (16, 48, 1),
+    (17, 50, 2),
+    (17, 49, 1),
+    (18, 50, 2),
+    (18, 51, 1),
+    (19, 51, 2),
+    (19, 50, 1),
+    (20, 51, 2),
+    (20, 52, 1),
+    (21, 53, 2),
+    (21, 54, 1),
+    (22, 55, 2),
+    (22, 56, 1),
+    (23, 59, 2),
+    (23, 58, 1),
+    (24, 61, 2),
+    (24, 62, 1),
+    (25, 61, 2),
+    (25, 62, 1),
+    (26, 61, 2),
+    (26, 62, 1),
+    (27, 62, 2),
+    (27, 61, 1),
+    (28, 65, 2),
+    (28, 64, 1),
+    (29, 75, 2),
+    (29, 76, 1),
+    (30, 75, 2),
+    (30, 78, 1),
+    (31, 73, 2),
+    (31, 74, 1),
+    (32, 82, 2),
+    (32, 83, 1),
+    (33, 85, 2),
+    (33, 86, 1),
+    (34, 95, 2),
+    (34, 96, 1),
+    (35, 117, 2),
+    (35, 118, 1),
+    (36, 131, 2),
+    (36, 132, 1),
+    (37, 131, 2),
+    (37, 132, 1),
+    (38, 134, 2),
+    (38, 135, 1),
+    (39, 135, 2),
+    (39, 134, 1),
+    (40, 147, 2),
+    (40, 148, 1),
+    (41, 150, 2),
+    (41, 149, 1),
+    (42, 160, 2),
+    (42, 161, 1),
+    (43, 161, 2),
+    (43, 160, 1),
+    (44, 164, 2),
+    (44, 161, 1),
+    (45, 169, 2),
+    (45, 170, 1),
+    (46, 170, 2),
+    (46, 171, 1),
+    (47, 174, 2),
+    (47, 173, 1),
+    (48, 191, 2),
+    (48, 190, 1),
+    (49, 193, 2),
+    (49, 194, 1),
+    (50, 198, 2),
+    (50, 199, 1);
+
+    MERGE dbo.EvaluationQuestionGoldChunks AS target
+    USING
+    (
+        SELECT eq.Id AS EvaluationQuestionId, dc.Id AS DocumentChunkId, g.RelevanceGrade
+        FROM @Vnr202Gold g
+        INNER JOIN @Vnr202Questions q ON q.Ordinal = g.Ordinal
+        INNER JOIN dbo.EvaluationQuestions eq ON eq.SubjectId = @Vnr202SubjectId AND eq.Question = q.Question
+        INNER JOIN dbo.DocumentChunks dc ON dc.DocumentId = @Vnr202DocumentId AND dc.PageNumber = g.PageNumber AND dc.SlideNumber IS NULL
+    ) AS source
+        ON target.EvaluationQuestionId = source.EvaluationQuestionId
+       AND target.DocumentChunkId = source.DocumentChunkId
+    WHEN MATCHED THEN
+        UPDATE SET RelevanceGrade = source.RelevanceGrade
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (EvaluationQuestionId, DocumentChunkId, RelevanceGrade)
+        VALUES (source.EvaluationQuestionId, source.DocumentChunkId, source.RelevanceGrade);
+END
+GO
 PRINT N'ChatAIWebDb database script executed successfully.';
 GO
+
+
