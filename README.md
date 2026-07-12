@@ -1,4 +1,4 @@
-# ChatAIWeb
+﻿# ChatAIWeb
 
 ChatAIWeb is an ASP.NET Core Razor Pages application that provides a RAG chatbot for Vietnamese study materials. The system lets Admins/Teachers upload PDF, DOCX, and PPTX files, split the content into chunks, generate embeddings, retrieve relevant context, and produce answers with source citations.
 
@@ -29,13 +29,16 @@ The project follows a 3-layer architecture for the PRN222/FPT course: `Presentat
 - Display citations by document, page/slide, chunk, and similarity score.
 - Detect near-duplicate or conflicting uploaded documents and require the subject head teacher to choose the correct source.
 - Store conversation history by user/subject.
-- Benchmark chat/RAG with an evaluation question set.
+- Benchmark chat/RAG with an evaluation question set, run history, model charts, and per-model details.
 - Support for multiple embedding models:
   - `bge-m3` via Ollama.
   - `nomic-embed-text` via Ollama.
   - `mxbai-embed-large` via Ollama.
-  - Optional: `vinai/phobert-base` via the PhoBERT FastAPI service.
+  - `vinai/phobert-base` via the PhoBERT FastAPI service.
 - Support for Qdrant as a vector store, with SQL as fallback.
+- Run RAGAS evaluations in a background FIFO queue with realtime SignalR progress.
+- Show token usage dashboards for users and embedding models.
+- Allow only the subject head teacher (`Subject.CreatedBy`) to upload and soft-delete documents.
 - Support for a RAGAS Python service to score RAG.
 
 ## Tech Stack
@@ -46,8 +49,8 @@ The project follows a 3-layer architecture for the PRN222/FPT course: `Presentat
 | UI | Razor Pages, Bootstrap, jQuery, SignalR |
 | Database | SQL Server, Entity Framework Core |
 | Auth | Cookie Authentication |
-| LLM | Google Gemini, Fake LLM fallback |
-| Embedding | Ollama `bge-m3`, `nomic-embed-text`, `mxbai-embed-large`; optional PhoBERT; Fake embedding fallback |
+| LLM | Google Gemini |
+| Embedding | Ollama `bge-m3`, `nomic-embed-text`, `mxbai-embed-large`; PhoBERT service |
 | Vector search | SQL cosine fallback, Qdrant REST API |
 | File parsing | PdfPig, OpenXML |
 | Benchmark | RAGAS service, LLM-as-judge fallback |
@@ -116,13 +119,7 @@ ChatAIWeb_Database.sql
 
 This file creates the `ChatAIWebDb` database, the required tables, and seeds demo data.
 
-If you already have an old database, also run the Phase 2 migration script if the file exists in the project:
-
-```text
-Phase2_Database_Migration.sql
-```
-
-The application also has a startup initializer that can add some Phase 2 tables/columns automatically if it can connect to the database.
+When updating an existing database, run `ChatAIWeb_Database.sql` again. The script contains idempotent schema updates, including `DocumentChunkEmbeddings`, RAGAS fields, and `Documents.IsSystemManaged`.
 
 ### 4. Check the connection string
 
@@ -136,7 +133,7 @@ Default:
 
 ```json
 "ConnectionStrings": {
-  "DefaultConnection": "Server=localhost;Database=ChatAIWebDb;Trusted_Connection=True;TrustServerCertificate=true;Encrypt=true;"
+  "DefaultConnection": "Server=localhost;Database=ChatAIWebDb;Trusted_Connection=True;TrustServerCertificate=true;Encrypt=false;"
 }
 ```
 
@@ -284,19 +281,56 @@ Default in `appsettings.json`:
       "Model": "vinai/phobert-base",
       "BaseUrl": "http://localhost:8001",
       "Dimension": 768,
-      "Enabled": false,
+      "Enabled": true,
       "IncludeInBenchmark": true
     }
   ]
 }
 ```
 
-Keep PhoBERT disabled unless the Python PhoBERT service is running:
+`phobert-base` is enabled in the committed configuration. Start the Python service before selecting or benchmarking it. If you do not want to run PhoBERT, set its `Enabled` value to `false`.
 
-```json
-"Enabled": false
+### Runtime Admin settings
+
+The Admin page `/SystemSettings` configures the active embedding model, retrieval parameters, and chunking. It does not accept LLM providers or API keys.
+
+Saved settings are stored in:
+
+```text
+Presentation/App_Data/system_settings.json
 ```
 
+Runtime precedence:
+
+1. Valid values in `system_settings.json`.
+2. Defaults in `Presentation/appsettings.json`.
+
+If the selected embedding model is missing, disabled, or invalid, the application falls back to `Embedding:DefaultModelKey`. The two System Prompt fields may be empty; the services then use their default behavior.
+
+Chunk modes:
+
+- `Page`: group N PDF pages or PPTX slides; DOCX falls back to word chunking.
+- `Word`: split inside each page/slide by word count.
+- `Character`: split inside each page/slide by character count.
+- Overlap applies only to `Word` and `Character`.
+- Changes apply to newly indexed documents and do not re-index old content.
+
+Default values come from `RagSettings`:
+
+```json
+"RagSettings": {
+  "TopK": 5,
+  "SimilarityThreshold": 0.6,
+  "MaxCitationSnippetLength": 250,
+  "MaxContextChunks": 5,
+  "ChunkSizeMode": "Page",
+  "PageChunkSize": 1,
+  "WordChunkSize": 700,
+  "CharacterChunkSize": 3000,
+  "ChunkOverlapSize": 100,
+  "MinChunkCharacters": 30
+}
+```
 ### Qdrant
 
 Configuration:
@@ -376,28 +410,27 @@ The seeded database also contains many other teachers and students.
 
 ```text
 ChatAIWeb
-├── BusinessObject
-│   ├── Entities
-│   └── Enums
-├── DataAccess
-│   ├── ChatAIWebDbContext.cs
-│   └── Repositories
-├── BusinessLogic
-│   ├── DTOs
-│   ├── Infrastructure
-│   └── Services
-├── Presentation
-│   ├── Pages
-│   ├── Models
-│   ├── wwwroot
-│   └── Program.cs
-└── python_services
-    ├── phobert_service.py
-    ├── ragas_service.py
-    ├── finetune_embedding.py
-    └── requirements.txt
+|-- BusinessObject
+|   |-- Entities
+|   `-- Enums
+|-- DataAccess
+|   |-- ChatAIWebDbContext.cs
+|   `-- Repositories
+|-- BusinessLogic
+|   |-- DTOs
+|   |-- Infrastructure
+|   `-- Services
+|-- Presentation
+|   |-- Pages
+|   |-- Models
+|   |-- wwwroot
+|   `-- Program.cs
+`-- python_services
+    |-- phobert_service.py
+    |-- ragas_service.py
+    |-- finetune_embedding.py
+    `-- requirements.txt
 ```
-
 ### Presentation
 
 Contains the ASP.NET Core Razor Pages UI:
@@ -406,7 +439,8 @@ Contains the ASP.NET Core Razor Pages UI:
 - ViewModels.
 - Cookie authentication.
 - Dependency injection in `Program.cs`.
-- SignalR upload progress hub.
+- SignalR hubs for upload, notifications, subject management, and RAGAS progress.
+- A shared admin widget that restores background RAGAS job status after navigation.
 
 PageModels should be thin and only call services in `BusinessLogic`.
 
@@ -421,8 +455,8 @@ Contains the business workflows:
 - Vector search.
 - RAG chatbot.
 - Citation mapping.
-- RAGAS benchmark.
-- System settings.
+- Background RAGAS benchmark, run history, metrics, and progress reporting.
+- Runtime embedding, retrieval, and chunking settings.
 
 ### DataAccess
 
@@ -505,20 +539,9 @@ Be careful: this operation will drop the old database if the script contains `DR
 3. Verify the `ChatAIWebDb` database.
 4. Run the app.
 
-### Old database after Phase 2
+### Existing database
 
-If the old database is missing columns:
-
-- `RunId`
-- `VectorStore`
-- `RetrievedContextsJson`
-- the `DocumentChunkEmbeddings` table
-
-Run:
-
-```text
-Phase2_Database_Migration.sql
-```
+Run `ChatAIWeb_Database.sql` again after pulling schema changes. The current script is the canonical schema and seed source; there is no separate Phase 2 migration file.
 
 ## Python Services
 
@@ -650,23 +673,9 @@ Try changing the connection string:
 "Encrypt=false;TrustServerCertificate=true;"
 ```
 
-### 3. RAGAS page reports invalid column
+### 3. RAGAS page reports an invalid or missing column
 
-If you hit:
-
-```text
-Invalid column name 'RunId'
-Invalid column name 'VectorStore'
-Invalid column name 'RetrievedContextsJson'
-```
-
-Run:
-
-```text
-Phase2_Database_Migration.sql
-```
-
-Or restart the app so the startup initializer has a chance to update the schema automatically.
+Run the latest `ChatAIWeb_Database.sql` against `ChatAIWebDb`, then restart the application.
 
 ### 4. Ollama timeout when backfilling embeddings
 
@@ -745,7 +754,8 @@ Stop the app running in Visual Studio, then build again.
 
 ## Security Notes
 
-- Do not commit the Gemini API key, OpenAI key, or Qdrant API key.
+- Do not commit the Gemini API key, Qdrant API key, database password, or other credentials.
+- OpenAI is not used by the current runtime.
 - Store secrets with User Secrets in development.
 - Use environment variables or a secret manager in production.
 
