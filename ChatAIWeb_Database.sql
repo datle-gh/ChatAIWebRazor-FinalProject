@@ -167,12 +167,21 @@ BEGIN
         ErrorMessage    NVARCHAR(MAX) NULL,
         UploadedAt      DATETIME2(0) NOT NULL CONSTRAINT DF_Documents_UploadedAt DEFAULT SYSUTCDATETIME(),
         IndexedAt       DATETIME2(0) NULL,
+        IsSystemManaged BIT NOT NULL CONSTRAINT DF_Documents_IsSystemManaged DEFAULT 0,
 
         CONSTRAINT FK_Documents_Subjects FOREIGN KEY (SubjectId) REFERENCES dbo.Subjects(Id),
         CONSTRAINT FK_Documents_Users_UploadedBy FOREIGN KEY (UploadedBy) REFERENCES dbo.Users(Id),
         CONSTRAINT CK_Documents_FileType CHECK (FileType IN (N'PDF', N'DOCX', N'PPTX', N'TXT')),
         CONSTRAINT CK_Documents_Status CHECK (Status IN (N'Uploaded', N'Processing', N'Indexed', N'Failed', N'Rejected', N'NeedsReview', N'Deleted'))
     );
+END
+GO
+
+IF COL_LENGTH(N'dbo.Documents', N'IsSystemManaged') IS NULL
+BEGIN
+    ALTER TABLE dbo.Documents
+        ADD IsSystemManaged BIT NOT NULL
+            CONSTRAINT DF_Documents_IsSystemManaged DEFAULT 0 WITH VALUES;
 END
 GO
 
@@ -635,6 +644,72 @@ SET FullName = N'Sinh viên Demo',
 WHERE Email = N'student@chataiweb.local';
 GO
 
+/* =========================================================
+   Seed: per-user token usage demo for AdminTokenUsage
+   UTC timestamps correspond to noon in Vietnam, 06-12/07/2026.
+   ========================================================= */
+DECLARE @TokenUsageSeedTitle NVARCHAR(255) = N'[SeedDemo] Token usage 06-12/07/2026';
+DECLARE @TokenUsageStartUtc DATETIME2(0) = CONVERT(DATETIME2(0), '2026-07-06T05:00:00');
+
+DELETE FROM dbo.ChatSessions
+WHERE Title = @TokenUsageSeedTitle;
+
+INSERT INTO dbo.ChatSessions (UserId, SubjectId, Title, CreatedAt, UpdatedAt)
+SELECT
+    userAccount.Id,
+    NULL,
+    @TokenUsageSeedTitle,
+    @TokenUsageStartUtc,
+    DATEADD
+    (
+        DAY,
+        CASE
+            WHEN userAccount.Email = N'teacher@chataiweb.local' THEN 6
+            WHEN userAccount.Role = N'Admin' THEN 3
+            WHEN userAccount.Role = N'Teacher' THEN 4 + (userAccount.Id % 2)
+            ELSE 2 + (userAccount.Id % 4)
+        END,
+        @TokenUsageStartUtc
+    )
+FROM dbo.Users userAccount;
+
+DECLARE @TokenUsageDays TABLE (DayOffset INT NOT NULL PRIMARY KEY);
+INSERT INTO @TokenUsageDays (DayOffset)
+VALUES (0), (1), (2), (3), (4), (5), (6);
+
+INSERT INTO dbo.ChatMessages
+    (ChatSessionId, Role, Content, ModelName, PromptTokens, CompletionTokens, CreatedAt)
+SELECT
+    session.Id,
+    N'Assistant',
+    N'Dữ liệu demo thống kê token theo người dùng.',
+    N'gemini-2.0-flash',
+    CASE
+        WHEN userAccount.Email = N'teacher@chataiweb.local' THEN 650 + (usageDay.DayOffset * 55)
+        WHEN userAccount.Role = N'Admin' THEN 55 + (usageDay.DayOffset * 4)
+        WHEN userAccount.Role = N'Teacher' THEN 300 + ((userAccount.Id % 5) * 25) + (usageDay.DayOffset * 20)
+        ELSE 180 + ((userAccount.Id % 7) * 20) + (usageDay.DayOffset * 15)
+    END,
+    CASE
+        WHEN userAccount.Email = N'teacher@chataiweb.local' THEN 420 + (usageDay.DayOffset * 35)
+        WHEN userAccount.Role = N'Admin' THEN 35 + (usageDay.DayOffset * 3)
+        WHEN userAccount.Role = N'Teacher' THEN 180 + ((userAccount.Id % 4) * 18) + (usageDay.DayOffset * 12)
+        ELSE 100 + ((userAccount.Id % 5) * 12) + (usageDay.DayOffset * 10)
+    END,
+    DATEADD(MINUTE, userAccount.Id % 60, DATEADD(DAY, usageDay.DayOffset, @TokenUsageStartUtc))
+FROM dbo.ChatSessions session
+INNER JOIN dbo.Users userAccount ON userAccount.Id = session.UserId
+CROSS JOIN @TokenUsageDays usageDay
+WHERE session.Title = @TokenUsageSeedTitle
+  AND usageDay.DayOffset <
+      CASE
+          WHEN userAccount.Email = N'teacher@chataiweb.local' THEN 7
+          WHEN userAccount.Role = N'Admin' THEN 4
+          WHEN userAccount.Role = N'Teacher' THEN 5 + (userAccount.Id % 2)
+          ELSE 3 + (userAccount.Id % 4)
+      END;
+GO
+
 IF NOT EXISTS (SELECT 1 FROM dbo.Subjects WHERE SubjectCode = N'CS101')
 BEGIN
     INSERT INTO dbo.Subjects (SubjectCode, SubjectName, Description, CreatedBy)
@@ -805,7 +880,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM dbo.Documents WHERE SubjectId = @Vnr202SubjectId AND StoredFileName = N'vnr202-lich-su-dang-benchmark-seed.pdf')
     BEGIN
         INSERT INTO dbo.Documents
-            (SubjectId, Title, OriginalFileName, StoredFileName, FilePath, FileType, FileSizeBytes, UploadedBy, Status, UploadedAt, IndexedAt)
+            (SubjectId, Title, OriginalFileName, StoredFileName, FilePath, FileType, FileSizeBytes, UploadedBy, Status, UploadedAt, IndexedAt, IsSystemManaged)
         VALUES
             (@Vnr202SubjectId,
              N'Lịch sử Đảng Cộng sản Việt Nam - benchmark seed',
@@ -817,8 +892,14 @@ BEGIN
              @Vnr202TeacherId,
              N'Indexed',
              SYSUTCDATETIME(),
-             SYSUTCDATETIME());
+             SYSUTCDATETIME(),
+             1);
     END;
+
+    UPDATE dbo.Documents
+    SET IsSystemManaged = 1
+    WHERE SubjectId = @Vnr202SubjectId
+      AND StoredFileName = N'vnr202-lich-su-dang-benchmark-seed.pdf';
 
     DECLARE @Vnr202DocumentId INT = (
         SELECT TOP (1) Id
