@@ -7,6 +7,8 @@ namespace DataAccess.Repositories.Implementations;
 
 public sealed class ChatRepository : IChatRepository
 {
+    private const string SeedDemoSessionPrefix = "[SeedDemo]";
+
     private readonly ChatAIWebDbContext _context;
 
     public ChatRepository(ChatAIWebDbContext context)
@@ -20,7 +22,10 @@ public sealed class ChatRepository : IChatRepository
     {
         return _context.ChatSessions
             .Include(session => session.Subject)
-            .FirstOrDefaultAsync(session => session.Id == sessionId, cancellationToken);
+            .FirstOrDefaultAsync(
+                session => session.Id == sessionId
+                    && (session.Title == null || !session.Title.StartsWith(SeedDemoSessionPrefix)),
+                cancellationToken);
     }
 
     public async Task<IReadOnlyList<ChatSession>> GetSessionsByUserAsync(
@@ -31,7 +36,8 @@ public sealed class ChatRepository : IChatRepository
             .AsNoTracking()
             .Include(session => session.Subject)
             .Include(session => session.ChatMessages)
-            .Where(session => session.UserId == userId)
+            .Where(session => session.UserId == userId
+                && (session.Title == null || !session.Title.StartsWith(SeedDemoSessionPrefix)))
             .OrderByDescending(session => session.UpdatedAt ?? session.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -45,7 +51,9 @@ public sealed class ChatRepository : IChatRepository
             .AsNoTracking()
             .Include(session => session.Subject)
             .Include(session => session.ChatMessages)
-            .Where(session => session.UserId == userId && session.SubjectId == subjectId)
+            .Where(session => session.UserId == userId
+                && session.SubjectId == subjectId
+                && (session.Title == null || !session.Title.StartsWith(SeedDemoSessionPrefix)))
             .OrderByDescending(session => session.UpdatedAt ?? session.CreatedAt)
             .ToListAsync(cancellationToken);
     }

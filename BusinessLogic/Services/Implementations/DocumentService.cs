@@ -208,7 +208,7 @@ public sealed class DocumentService : IDocumentService
         CancellationToken cancellationToken = default)
     {
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
-        return document is null ? null : MapDetail(document);
+        return document is null || document.IsSystemManaged ? null : MapDetail(document);
     }
 
     public async Task<DocumentChunksDto?> GetDocumentChunksAsync(
@@ -220,7 +220,7 @@ public sealed class DocumentService : IDocumentService
         CancellationToken cancellationToken = default)
     {
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
-        if (document is null || !CanViewDocument(document, currentUserId, currentUserRole))
+        if (document is null || document.IsSystemManaged || !CanViewDocument(document, currentUserId, currentUserRole))
         {
             return null;
         }
@@ -381,6 +381,36 @@ public sealed class DocumentService : IDocumentService
         return new DocumentUploadResult(true, document.Id, "Đã từ chối tài liệu.");
     }
 
+    public async Task<DocumentUploadResult> DeleteAsync(
+        int documentId,
+        int deletedBy,
+        string? deleterRole,
+        CancellationToken cancellationToken = default)
+    {
+        var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
+        if (document is null || document.IsSystemManaged || document.Status == DocumentStatus.Deleted)
+        {
+            return new DocumentUploadResult(false, documentId, "Không tìm thấy tài liệu.");
+        }
+
+        if (!string.Equals(deleterRole, UserRoleNames.Teacher, StringComparison.OrdinalIgnoreCase)
+            || !IsHeadTeacher(document.Subject, deletedBy))
+        {
+            return new DocumentUploadResult(
+                false,
+                documentId,
+                "Chỉ giảng viên trưởng của môn học mới có quyền xóa tài liệu.");
+        }
+
+        await _documentRepository.UpdateStatusAsync(
+            document.Id,
+            DocumentStatus.Deleted,
+            "Tài liệu đã được giảng viên trưởng xóa.",
+            cancellationToken: cancellationToken);
+
+        return new DocumentUploadResult(true, document.Id, "Đã xóa tài liệu khỏi kho tài liệu.");
+    }
+
     public async Task<IReadOnlyList<SubjectOptionDto>> GetSubjectOptionsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -421,7 +451,7 @@ public sealed class DocumentService : IDocumentService
         CancellationToken cancellationToken = default)
     {
         var document = await _documentRepository.GetByIdAsync(documentId, cancellationToken);
-        if (document is null)
+        if (document is null || document.IsSystemManaged)
             return null;
 
         if (document.Status is DocumentStatus.Deleted or DocumentStatus.NeedsReview)

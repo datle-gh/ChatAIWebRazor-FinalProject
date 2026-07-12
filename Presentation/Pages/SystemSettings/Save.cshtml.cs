@@ -51,8 +51,8 @@ public sealed class SaveModel : AppPageModel
             CharacterChunkSize = ViewModel.CharacterChunkSize,
             ChunkOverlapSize = ViewModel.ChunkOverlapSize,
             MinChunkCharacters = ViewModel.MinChunkCharacters,
-            ChatSystemPrompt = ViewModel.ChatSystemPrompt,
-            EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt
+            ChatSystemPrompt = ViewModel.ChatSystemPrompt ?? string.Empty,
+            EvaluationSystemPrompt = ViewModel.EvaluationSystemPrompt ?? string.Empty
         };
 
         await _settingsService.SaveSettingsAsync(settings, cancellationToken);

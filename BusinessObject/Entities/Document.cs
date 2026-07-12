@@ -32,6 +32,8 @@ public partial class Document
 
     public DateTime? IndexedAt { get; set; }
 
+    public bool IsSystemManaged { get; set; }
+
     public virtual ICollection<Citation> Citations { get; set; } = new List<Citation>();
 
     public virtual ICollection<DocumentConflictCandidate> ConflictCandidateDocuments { get; set; } = new List<DocumentConflictCandidate>();

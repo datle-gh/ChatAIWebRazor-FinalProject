@@ -34,8 +34,8 @@ public sealed class SystemSettingsViewModel
     [Range(1, 1000, ErrorMessage = "Độ dài tối thiểu phải từ 1 đến 1000 ký tự.")]
     public int MinChunkCharacters { get; set; } = 30;
 
-    public string ChatSystemPrompt { get; set; } = string.Empty;
-    public string EvaluationSystemPrompt { get; set; } = string.Empty;
+    public string? ChatSystemPrompt { get; set; }
+    public string? EvaluationSystemPrompt { get; set; }
     public string? SuccessMessage { get; set; }
     public string? ErrorMessage { get; set; }
 }

@@ -126,6 +126,7 @@ public partial class ChatAIWebDbContext : DbContext
             entity.Property(e => e.FilePath).HasMaxLength(1000);
             entity.Property(e => e.FileType).HasMaxLength(20);
             entity.Property(e => e.IndexedAt).HasPrecision(0);
+            entity.Property(e => e.IsSystemManaged).HasDefaultValue(false);
             entity.Property(e => e.OriginalFileName).HasMaxLength(255);
             entity.Property(e => e.Status)
                 .HasMaxLength(30)

@@ -42,6 +42,12 @@ public interface IDocumentService
         string? reason,
         CancellationToken cancellationToken = default);
 
+    Task<DocumentUploadResult> DeleteAsync(
+        int documentId,
+        int deletedBy,
+        string? deleterRole,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<SubjectOptionDto>> GetSubjectOptionsAsync(
         CancellationToken cancellationToken = default);
 

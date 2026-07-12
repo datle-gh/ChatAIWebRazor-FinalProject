@@ -120,6 +120,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
         settings.CharacterChunkSize = Math.Clamp(settings.CharacterChunkSize, 200, 20000);
         settings.ChunkOverlapSize = Math.Clamp(settings.ChunkOverlapSize, 0, 2000);
         settings.MinChunkCharacters = Math.Clamp(settings.MinChunkCharacters, 1, 1000);
+        settings.ChatSystemPrompt ??= string.Empty;
+        settings.EvaluationSystemPrompt ??= string.Empty;
         return settings;
     }
 

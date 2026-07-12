@@ -12,6 +12,8 @@ public sealed class DocumentIndexViewModel
 
     public bool CanUploadCurrentSubject { get; set; }
 
+    public bool CanDeleteCurrentSubject { get; set; }
+
     public IReadOnlyList<SubjectOptionViewModel> Subjects { get; set; } = [];
 
     public IReadOnlyList<DocumentListItemViewModel> Documents { get; set; } = [];

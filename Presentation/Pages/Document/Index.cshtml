@@ -7,6 +7,7 @@
     bool isStudent = User.IsInRole("Student");
     bool inSubjectView = Model.ViewModel.SubjectId.HasValue;
     bool canUpload = inSubjectView && Model.ViewModel.CanUploadCurrentSubject;
+    bool canDelete = inSubjectView && Model.ViewModel.CanDeleteCurrentSubject;
     var selectedSubject = inSubjectView ? Model.ViewModel.Subjects.FirstOrDefault(s => s.Id == Model.ViewModel.SubjectId) : null;
 
     ViewData["Title"] = inSubjectView
@@ -79,6 +80,14 @@ else
        VIEW B — Bảng tài liệu chi tiết theo môn học
        ══════════════════════════════════════════════════════════════════════ *@
 
+    @if (TempData["SuccessMessage"] is string successMessage)
+    {
+        <div class="alert alert-success" role="status">@successMessage</div>
+    }
+    @if (TempData["ErrorMessage"] is string errorMessage)
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
     @* Back breadcrumb *@
     <div class="mb-3">
         <a class="doc-back-link" asp-page="/Document/Index">
@@ -228,6 +237,18 @@ else
                                                 <span class="material-symbols-outlined" style="font-size:1rem">psychology</span>
                                                 <span>Hỏi AI</span>
                                             </button>
+                                        }
+                                        @if (canDelete)
+                                        {
+                                            <form method="post" asp-page-handler="Delete" class="d-inline"
+                                                  onsubmit="return confirm('Bạn có chắc muốn xóa tài liệu này khỏi kho tài liệu?');">
+                                                <input type="hidden" name="documentId" value="@doc.Id" />
+                                                <input type="hidden" name="subjectId" value="@doc.SubjectId" />
+                                                <button class="doc-row-btn doc-row-btn-danger" type="submit" title="Xóa tài liệu">
+                                                    <span class="material-symbols-outlined" style="font-size:1rem">delete</span>
+                                                    <span>Xóa</span>
+                                                </button>
+                                            </form>
                                         }
                                     </div>
                                 </td>
@@ -523,6 +544,15 @@ else
     }
 
 
+    .doc-row-btn-danger {
+        color: var(--danger);
+        background: var(--danger-container, #ffdad6);
+    }
+
+    .doc-row-btn-danger:hover {
+        color: #fff;
+        background: var(--danger);
+    }
     /* ── Download button ── */
     .doc-row-btn-download {
         color: #0d6efd;

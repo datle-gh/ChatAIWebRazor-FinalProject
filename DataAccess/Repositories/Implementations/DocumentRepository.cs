@@ -44,6 +44,7 @@ public sealed class DocumentRepository : IDocumentRepository
                 .ThenInclude(subject => subject.SubjectEnrollments)
             .Include(document => document.UploadedByNavigation)
             .Include(document => document.DocumentChunks)
+            .Where(document => !document.IsSystemManaged)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(searchTerm))

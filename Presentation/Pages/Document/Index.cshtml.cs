@@ -3,6 +3,7 @@ using BusinessLogic.DTOs.Responses;
 using BusinessLogic.Services.Interfaces;
 using BusinessObject.Enums;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Presentation.Models;
 
 namespace Presentation.Pages.Document;
@@ -45,11 +46,27 @@ public sealed class IndexModel : AppPageModel
             Status = status,
             CanUploadCurrentSubject = subjectId.HasValue
                 && uploadSubjects.Any(subject => subject.Id == subjectId.Value),
+            CanDeleteCurrentSubject = subjectId.HasValue
+                && uploadSubjects.Any(subject => subject.Id == subjectId.Value),
             Subjects = MapSubjects(result.Subjects),
             Documents = result.Documents.Select(MapDocumentListItem).ToList()
         };
     }
 
+    public async Task<IActionResult> OnPostDeleteAsync(
+        int documentId,
+        int subjectId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _documentService.DeleteAsync(
+            documentId,
+            GetCurrentUserId(),
+            GetCurrentUserRole(),
+            cancellationToken);
+
+        TempData[result.Succeeded ? "SuccessMessage" : "ErrorMessage"] = result.Message;
+        return RedirectToPage("/Document/Index", new { subjectId });
+    }
     private static IReadOnlyList<SubjectOptionViewModel> MapSubjects(
         IReadOnlyList<SubjectOptionDto> subjects)
     {
